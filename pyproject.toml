@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "jawafdehi-mcp"
+version = "0.1.0"
+description = "MCP server for Jawafdehi and NGM judicial data"
+authors = ["NewNepal.org <contact@newnepal.org>"]
+readme = "README.md"
+packages = [{include = "jawafdehi_mcp", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+mcp = "^1.1.2"
+sqlalchemy = "^2.0.0"
+psycopg2-binary = "^2.9.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+flake8 = "^7.0.0"
+
+[tool.poetry.scripts]
+jawafdehi-mcp = "jawafdehi_mcp.server:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
