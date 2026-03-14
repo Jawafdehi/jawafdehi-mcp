@@ -295,7 +295,7 @@ class DocumentConverterTool(BaseTool):
                         type="text",
                         text=(
                             f"✅ Converted with {converter_used}\n"
-                            f"📄 Markdown written to {out}\n\n{markdown}"
+                            f"📄 Markdown written to {out}"
                         ),
                     )
                 ]
@@ -303,7 +303,7 @@ class DocumentConverterTool(BaseTool):
                 return [
                     TextContent(
                         type="text",
-                        text=f"Error writing to {output_path}: {e}\n\nMarkdown content:\n{markdown}",
+                        text=f"Error writing to {output_path}: {e}",
                     )
                 ]
 

@@ -119,7 +119,7 @@ class MarkItDownConverterTool(BaseTool):
                 return [
                     TextContent(
                         type="text",
-                        text=f"✅ Markdown written to {out}\n\n{markdown}",
+                        text=f"✅ Markdown written to {out}",
                     )
                 ]
 

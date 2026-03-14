@@ -193,7 +193,7 @@ class TestDocumentConverterTool:
 
     @pytest.mark.asyncio
     async def test_output_path_writing(self, tmp_path):
-        """Test that output_path writes markdown to disk."""
+        """Test that output_path writes markdown to disk without including content in response."""
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
         output_file = tmp_path / "output" / "result.md"
@@ -215,6 +215,9 @@ class TestDocumentConverterTool:
 
         assert len(result) == 1
         assert "written to" in result[0].text.lower()
+        # Verify markdown content is NOT included in the response
+        assert fake_markdown not in result[0].text
+        # Verify file was written correctly
         assert output_file.exists()
         assert output_file.read_text(encoding="utf-8") == fake_markdown
 

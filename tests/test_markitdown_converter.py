@@ -79,7 +79,7 @@ class TestMarkItDownConverterTool:
 
     @pytest.mark.asyncio
     async def test_successful_conversion_with_output_path(self, tmp_path):
-        """Test that output_path writes the markdown to disk."""
+        """Test that output_path writes the markdown to disk without including content in response."""
         output_file = tmp_path / "output" / "result.md"
         fake_markdown = "# Test Document\n\nConverted content\n"
         mock_result = MagicMock()
@@ -101,7 +101,9 @@ class TestMarkItDownConverterTool:
 
         assert len(result) == 1
         assert "✅ Markdown written to" in result[0].text
-        assert fake_markdown in result[0].text
+        # Verify markdown content is NOT included in the response
+        assert fake_markdown not in result[0].text
+        # Verify file was written correctly
         assert output_file.exists()
         assert output_file.read_text(encoding="utf-8") == fake_markdown
 

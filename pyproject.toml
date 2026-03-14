@@ -13,7 +13,7 @@ sqlalchemy = "^2.0.0"
 psycopg2-binary = "^2.9.0"
 nepali-datetime = "^1.0.8.4"
 likhit = {git = "https://github.com/NewNepal-org/likhit.git"}
-markitdown = "^0.1.5"
+markitdown = {extras = ["docx", "pdf", "pptx", "xlsx"], version = "^0.1.5"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
