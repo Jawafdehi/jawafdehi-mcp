@@ -13,6 +13,7 @@ poetry install
 
 ```bash
 export NGM_DATABASE_URL="postgresql://user:password@host:5432/ngm_database"
+export JAWAFDEHI_API_TOKEN="your-drf-token"
 ```
 
 ### 3. Run the Server
@@ -33,7 +34,8 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
       "args": ["run", "jawafdehi-mcp"],
       "cwd": "/absolute/path/to/services/jawafdehi-mcp",
       "env": {
-        "NGM_DATABASE_URL": "postgresql://user:password@host:5432/database"
+        "NGM_DATABASE_URL": "postgresql://user:password@host:5432/database",
+        "JAWAFDEHI_API_TOKEN": "your-drf-token"
       }
     }
   }
@@ -41,6 +43,24 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
 ```
 
 ## Available Tools
+
+### create_jawafdehi_case
+
+Create a draft Jawafdehi case using a simplified authenticated payload.
+
+**Parameters:**
+- `title` (string, required)
+- `case_type` (string, required): `CORRUPTION` or `PROMISES`
+- `short_description` (string, optional)
+- `description` (string, optional)
+
+### patch_jawafdehi_case
+
+Patch an existing Jawafdehi case using raw RFC 6902 JSON Patch operations.
+
+**Parameters:**
+- `case_id` (integer, required)
+- `operations` (array, required)
 
 ### ngm_query_judicial
 

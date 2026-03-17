@@ -9,6 +9,40 @@ from mcp.types import TextContent
 from .base import BaseTool
 
 
+def _get_jawafdehi_base_url() -> str:
+    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org").rstrip(
+        "/"
+    )
+
+
+def _get_jawafdehi_api_token() -> str | None:
+    token = os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
+    return token or None
+
+
+def _json_text_content(payload: Any) -> list[TextContent]:
+    return [
+        TextContent(type="text", text=json.dumps(payload, indent=2, ensure_ascii=False))
+    ]
+
+
+def _error_text_content(message: str) -> list[TextContent]:
+    return [TextContent(type="text", text=message)]
+
+
+def _build_http_error_payload(response: httpx.Response, prefix: str) -> dict[str, Any]:
+    try:
+        details: Any = response.json()
+    except ValueError:
+        details = response.text
+
+    return {
+        "error": prefix,
+        "status_code": response.status_code,
+        "details": details,
+    }
+
+
 class SearchJawafdehiCasesTool(BaseTool):
     """Tool for searching Jawafdehi accountability cases."""
 
@@ -60,7 +94,7 @@ class SearchJawafdehiCasesTool(BaseTool):
             query_params["page"] = str(arguments["page"])
 
         query_string = urllib.parse.urlencode(query_params)
-        base_url = os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org")
+        base_url = _get_jawafdehi_base_url()
         url = f"{base_url.rstrip('/')}/api/cases/?{query_string}"
 
         try:
@@ -69,21 +103,14 @@ class SearchJawafdehiCasesTool(BaseTool):
                 response.raise_for_status()
                 data = response.json()
 
-                return [
-                    TextContent(
-                        type="text", text=json.dumps(data, indent=2, ensure_ascii=False)
-                    )
-                ]
+                return _json_text_content(data)
         except httpx.HTTPError as e:
-            return [
-                TextContent(
-                    type="text",
-                    text=f"Error accessing Jawafdehi cases API: {str(e)}\n\n"
-                    f"Consider narrowing your search or checking parameters.",
-                )
-            ]
+            return _error_text_content(
+                f"Error accessing Jawafdehi cases API: {str(e)}\n\n"
+                f"Consider narrowing your search or checking parameters."
+            )
         except Exception as e:
-            return [TextContent(type="text", text=f"Unexpected error: {str(e)}")]
+            return _error_text_content(f"Unexpected error: {str(e)}")
 
 
 class GetJawafdehiCaseTool(BaseTool):
@@ -124,17 +151,17 @@ class GetJawafdehiCaseTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         case_id = arguments.get("case_id")
         if not case_id:
-            return [TextContent(type="text", text="Error: case_id is required")]
+            return _error_text_content("Error: case_id is required")
 
         fetch_sources = arguments.get("fetch_sources", False)
-        base_url = os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org")
+        base_url = _get_jawafdehi_base_url()
         case_url = f"{base_url.rstrip('/')}/api/cases/{case_id}/"
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(case_url, timeout=30.0)
                 if response.status_code == 404:
-                    return [TextContent(type="text", text=f"Case {case_id} not found.")]
+                    return _error_text_content(f"Case {case_id} not found.")
                 response.raise_for_status()
                 case_data = response.json()
 
@@ -162,18 +189,190 @@ class GetJawafdehiCaseTool(BaseTool):
                     if resolved_sources:
                         case_data["_resolved_sources"] = resolved_sources
 
-                return [
-                    TextContent(
-                        type="text",
-                        text=json.dumps(case_data, indent=2, ensure_ascii=False),
-                    )
-                ]
+                return _json_text_content(case_data)
         except httpx.HTTPError as e:
-            return [
-                TextContent(
-                    type="text",
-                    text=f"Error accessing Jawafdehi API for case {case_id}: {str(e)}",
-                )
-            ]
+            return _error_text_content(
+                f"Error accessing Jawafdehi API for case {case_id}: {str(e)}"
+            )
         except Exception as e:
-            return [TextContent(type="text", text=f"Unexpected error: {str(e)}")]
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class CreateJawafdehiCaseTool(BaseTool):
+    """Tool for creating a draft Jawafdehi case."""
+
+    @property
+    def name(self) -> str:
+        return "create_jawafdehi_case"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a draft Jawafdehi case using a simple authenticated interface. "
+            "Requires JAWAFDEHI_API_TOKEN."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Case title.",
+                },
+                "case_type": {
+                    "type": "string",
+                    "enum": ["CORRUPTION", "PROMISES"],
+                    "description": "Case type.",
+                },
+                "short_description": {
+                    "type": "string",
+                    "description": "Optional short description.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional full description.",
+                },
+            },
+            "required": ["title", "case_type"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        title = arguments.get("title")
+        case_type = arguments.get("case_type")
+        token = _get_jawafdehi_api_token()
+
+        if not token:
+            return _error_text_content(
+                "Error: JAWAFDEHI_API_TOKEN environment variable is required."
+            )
+
+        if not title:
+            return _error_text_content("Error: title is required")
+
+        if not case_type:
+            return _error_text_content("Error: case_type is required")
+
+        payload = {
+            "title": title,
+            "case_type": case_type,
+        }
+
+        if "short_description" in arguments:
+            payload["short_description"] = arguments["short_description"]
+        if "description" in arguments:
+            payload["description"] = arguments["description"]
+
+        url = f"{_get_jawafdehi_base_url()}/api/cases/"
+        headers = {"Authorization": f"Token {token}"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=30.0,
+                )
+
+                if response.is_success:
+                    return _json_text_content(response.json())
+
+                return _json_text_content(
+                    _build_http_error_payload(
+                        response, "Error creating Jawafdehi case via API."
+                    )
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(
+                f"Error accessing Jawafdehi create API: {str(e)}"
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class PatchJawafdehiCaseTool(BaseTool):
+    """Tool for patching a Jawafdehi case with RFC 6902 operations."""
+
+    @property
+    def name(self) -> str:
+        return "patch_jawafdehi_case"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Patch a Jawafdehi case using raw RFC 6902 JSON Patch operations. "
+            "Requires JAWAFDEHI_API_TOKEN."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "case_id": {
+                    "type": "integer",
+                    "description": "Database id of the case to patch.",
+                },
+                "operations": {
+                    "type": "array",
+                    "description": "RFC 6902 JSON Patch operations.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {"type": "string"},
+                            "path": {"type": "string"},
+                            "value": {},
+                        },
+                        "required": ["op", "path"],
+                    },
+                },
+            },
+            "required": ["case_id", "operations"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        case_id = arguments.get("case_id")
+        operations = arguments.get("operations")
+        token = _get_jawafdehi_api_token()
+
+        if not token:
+            return _error_text_content(
+                "Error: JAWAFDEHI_API_TOKEN environment variable is required."
+            )
+
+        if case_id is None:
+            return _error_text_content("Error: case_id is required")
+
+        if not isinstance(operations, list):
+            return _error_text_content(
+                "Error: operations must be a JSON Patch array of operation objects."
+            )
+
+        url = f"{_get_jawafdehi_base_url()}/api/cases/{case_id}/"
+        headers = {"Authorization": f"Token {token}"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    url,
+                    json=operations,
+                    headers=headers,
+                    timeout=30.0,
+                )
+
+                if response.is_success:
+                    return _json_text_content(response.json())
+
+                return _json_text_content(
+                    _build_http_error_payload(
+                        response, f"Error patching Jawafdehi case {case_id} via API."
+                    )
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(
+                f"Error accessing Jawafdehi patch API for case {case_id}: {str(e)}"
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")

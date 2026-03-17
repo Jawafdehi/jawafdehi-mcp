@@ -8,11 +8,13 @@ from mcp.types import TextContent, Tool
 
 from .tools import (
     BaseTool,
+    CreateJawafdehiCaseTool,
     DateConverterTool,
     DocumentConverterTool,
     GetJawafdehiCaseTool,
     NGMExtractCaseDataTool,
     NGMJudicialTool,
+    PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
 )
 from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
@@ -26,6 +28,8 @@ TOOLS: list[BaseTool] = [
     NGMExtractCaseDataTool(),
     SearchJawafdehiCasesTool(),
     GetJawafdehiCaseTool(),
+    CreateJawafdehiCaseTool(),
+    PatchJawafdehiCaseTool(),
     SearchNESEntitiesTool(),
     GetNESEntitiesTool(),
     GetNESTagsTool(),

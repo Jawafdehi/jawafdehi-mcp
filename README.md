@@ -10,6 +10,8 @@ Model Context Protocol (MCP) server providing tools for querying Nepal's judicia
 - `ngm_extract_case_data`: Extract complete judicial case information to Markdown
 - `search_jawafdehi_cases`: Search published Jawafdehi accountability cases
 - `get_jawafdehi_case`: Retrieve detailed case information
+- `create_jawafdehi_case`: Create a draft Jawafdehi case with simple fields
+- `patch_jawafdehi_case`: Patch a Jawafdehi case with RFC 6902 operations
 - `search_nes_entities`: Search Nepal Entity Service for persons and organizations
 - `get_nes_entities`: Retrieve complete entity profiles
 - `get_nes_tags`: Fetch all available entity tags
@@ -18,7 +20,7 @@ Model Context Protocol (MCP) server providing tools for querying Nepal's judicia
   - Likhit for Nepal government PDFs (CIAA press releases, etc.)
   - MarkItDown for Office docs (DOCX, PPTX, XLSX), general PDFs, web pages
   - Automatic fallback if Likhit fails
-- Read-only access with query validation
+- Read-heavy access with authenticated Jawafdehi case write tools
 - Timeout protection (default 15s)
 - Comprehensive error handling
 
@@ -62,6 +64,7 @@ Set the required environment variable:
 
 ```bash
 export NGM_DATABASE_URL="postgresql://user:password@host:5432/database"
+export JAWAFDEHI_API_TOKEN="your-drf-token"
 ```
 
 ## Usage
@@ -78,12 +81,16 @@ Add to your MCP client configuration:
       "args": ["run", "jawafdehi-mcp"],
       "cwd": "/path/to/services/jawafdehi-mcp",
       "env": {
-        "NGM_DATABASE_URL": "postgresql://user:password@host:5432/database"
+        "NGM_DATABASE_URL": "postgresql://user:password@host:5432/database",
+        "JAWAFDEHI_API_TOKEN": "your-drf-token"
       }
     }
   }
 }
 ```
+
+For Jawafdehi write tools, the token must belong to a user permitted by the
+Jawafdehi API to create or edit cases.
 
 ### Available Tables
 
