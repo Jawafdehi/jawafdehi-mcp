@@ -77,11 +77,18 @@ class TestLikhitExtractTool:
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
         fake_markdown = "---\ntitle: Test\n---\n\nExtracted content\n"
+        fake_extraction = object()
 
-        with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
-            return_value=fake_markdown,
-        ) as mock_convert:
+        with (
+            patch(
+                "jawafdehi_mcp.tools.likhit_extract.likhit.extract",
+                return_value=fake_extraction,
+            ) as mock_extract,
+            patch(
+                "jawafdehi_mcp.tools.likhit_extract.likhit_render_markdown",
+                return_value=fake_markdown,
+            ) as mock_render,
+        ):
             result = await self.tool.execute(
                 {
                     "file_path": str(pdf_file),
@@ -93,7 +100,15 @@ class TestLikhitExtractTool:
 
         assert len(result) == 1
         assert result[0].text == fake_markdown
-        mock_convert.assert_called_once_with(str(pdf_file))
+        mock_extract.assert_called_once_with(
+            str(pdf_file),
+            "ciaa-press-release",
+            title="Press Release",
+            publication_date=None,
+            source_url="https://ciaa.gov.np/press/123",
+            pages=None,
+        )
+        mock_render.assert_called_once_with(fake_extraction)
 
     @pytest.mark.asyncio
     async def test_successful_extraction_with_output_path(self, tmp_path):
@@ -104,9 +119,15 @@ class TestLikhitExtractTool:
 
         fake_markdown = "---\ntitle: Test\n---\n\nExtracted content\n"
 
-        with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
-            return_value=fake_markdown,
+        with (
+            patch(
+                "jawafdehi_mcp.tools.likhit_extract.likhit.extract",
+                return_value=object(),
+            ),
+            patch(
+                "jawafdehi_mcp.tools.likhit_extract.likhit_render_markdown",
+                return_value=fake_markdown,
+            ),
         ):
             result = await self.tool.execute(
                 {
@@ -129,7 +150,7 @@ class TestLikhitExtractTool:
         pdf_file.write_bytes(b"not a real pdf")
 
         with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
+            "jawafdehi_mcp.tools.likhit_extract.likhit.extract",
             side_effect=Exception("Unsupported document type 'invalid'"),
         ):
             result = await self.tool.execute(

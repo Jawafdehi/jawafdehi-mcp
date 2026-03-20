@@ -80,11 +80,18 @@ class TestDocumentConverterTool:
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
         fake_markdown = "---\ntitle: CIAA Press Release\n---\n\nContent\n"
+        fake_extraction = object()
 
-        with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value=fake_markdown,
-        ) as mock_convert:
+        with (
+            patch(
+                "jawafdehi_mcp.tools.document_converter.likhit.extract",
+                return_value=fake_extraction,
+            ) as mock_extract,
+            patch(
+                "jawafdehi_mcp.tools.document_converter.likhit_render_markdown",
+                return_value=fake_markdown,
+            ) as mock_render,
+        ):
             result = await self.tool.execute(
                 {
                     "file_path": str(pdf_file),
@@ -96,7 +103,15 @@ class TestDocumentConverterTool:
         assert len(result) == 1
         assert "Likhit" in result[0].text
         assert fake_markdown in result[0].text
-        mock_convert.assert_called_once_with(str(pdf_file))
+        mock_extract.assert_called_once_with(
+            str(pdf_file),
+            "ciaa-press-release",
+            title="Test Press Release",
+            publication_date=None,
+            source_url=None,
+            pages=None,
+        )
+        mock_render.assert_called_once_with(fake_extraction)
 
     @pytest.mark.asyncio
     async def test_likhit_fallback_to_markitdown(self, tmp_path):
@@ -110,7 +125,7 @@ class TestDocumentConverterTool:
 
         with (
             patch(
-                "jawafdehi_mcp.tools.document_converter.likhit.convert",
+                "jawafdehi_mcp.tools.document_converter.likhit.extract",
                 side_effect=Exception("Likhit extraction failed"),
             ),
             patch(
@@ -289,14 +304,20 @@ class TestDocumentConverterTool:
 
     @pytest.mark.asyncio
     async def test_likhit_parameters_ignored_by_new_api(self, tmp_path):
-        """The current public likhit API only accepts a file path."""
+        """The current public likhit API accepts metadata alongside file path."""
         pdf_file = tmp_path / "ciaa.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
 
-        with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value="# Converted\n",
-        ) as mock_convert:
+        with (
+            patch(
+                "jawafdehi_mcp.tools.document_converter.likhit.extract",
+                return_value=object(),
+            ) as mock_extract,
+            patch(
+                "jawafdehi_mcp.tools.document_converter.likhit_render_markdown",
+                return_value="# Converted\n",
+            ),
+        ):
             await self.tool.execute(
                 {
                     "file_path": str(pdf_file),
@@ -308,7 +329,14 @@ class TestDocumentConverterTool:
                 }
             )
 
-        mock_convert.assert_called_once_with(str(pdf_file))
+        mock_extract.assert_called_once_with(
+            str(pdf_file),
+            "ciaa-press-release",
+            title="Custom Title",
+            publication_date="2024-01-15",
+            source_url="https://ciaa.gov.np/123",
+            pages="1-3",
+        )
 
     @pytest.mark.asyncio
     async def test_default_doc_type_auto(self, tmp_path):
