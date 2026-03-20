@@ -7,7 +7,7 @@ and MarkItDown (for general documents) based on the input parameters.
 from pathlib import Path
 from typing import Any
 
-from likhit import extract
+from likhit import extractors
 from likhit.core import render_markdown
 from markitdown import MarkItDown
 from mcp.types import TextContent
