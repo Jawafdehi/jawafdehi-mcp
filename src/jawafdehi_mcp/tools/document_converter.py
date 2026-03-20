@@ -6,6 +6,8 @@ and MarkItDown (for general documents) based on the input parameters.
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
+from urllib.request import url2pathname
 
 import likhit
 from markitdown import MarkItDown
@@ -171,9 +173,13 @@ class DocumentConverterTool(BaseTool):
             return file_path, True
 
         if uri:
-            # Check if it's a file:// URI
             if uri.startswith("file://"):
-                return uri.replace("file://", ""), True
+                parsed = urlparse(uri)
+                if parsed.netloc not in ("", "localhost"):
+                    raise ValueError(
+                        "Unsupported file URI. Netloc must be empty or localhost."
+                    )
+                return url2pathname(unquote(parsed.path)), True
             return uri, False
 
         raise ValueError("Must specify either 'file_path' or 'uri'.")
@@ -221,9 +227,8 @@ class DocumentConverterTool(BaseTool):
             tuple: (markdown_content, error_message)
         """
         try:
-            # If source is a local file path, convert to file:// URI
             if not source.startswith(("http://", "https://", "file://", "data:")):
-                source = f"file://{source}"
+                source = Path(source).resolve().as_uri()
 
             enable_plugins = arguments.get("enable_plugins", False)
             converter = MarkItDown(enable_plugins=enable_plugins)

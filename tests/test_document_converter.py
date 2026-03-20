@@ -1,5 +1,4 @@
 """Tests for the unified DocumentConverterTool."""
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -156,7 +155,7 @@ class TestDocumentConverterTool:
         assert fake_markdown in result[0].text
         mock_converter.convert_uri.assert_called_once()
         call_args = mock_converter.convert_uri.call_args[0][0]
-        assert call_args.startswith("file://")
+        assert call_args == docx_file.resolve().as_uri()
 
     @pytest.mark.asyncio
     async def test_markitdown_with_uri(self):
@@ -253,6 +252,39 @@ class TestDocumentConverterTool:
         assert len(result) == 1
         assert "MarkItDown" in result[0].text
         assert "Error" not in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
+
+    @pytest.mark.asyncio
+    async def test_localhost_file_uri_conversion(self, tmp_path):
+        """file://localhost URIs should resolve to local filesystem paths."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 fake")
+
+        fake_markdown = "# Test\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+        localhost_uri = f"file://localhost{pdf_file.resolve().as_uri()[7:]}"
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute({"uri": localhost_uri})
+
+        assert len(result) == 1
+        assert "Error" not in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
+
+    @pytest.mark.asyncio
+    async def test_rejects_remote_file_uri_netloc(self):
+        """Remote file URIs should be rejected before path validation."""
+        result = await self.tool.execute({"uri": "file://example.com/test.pdf"})
+
+        assert len(result) == 1
+        assert "Unsupported file URI" in result[0].text
 
     @pytest.mark.asyncio
     async def test_likhit_parameters_ignored_by_new_api(self, tmp_path):
