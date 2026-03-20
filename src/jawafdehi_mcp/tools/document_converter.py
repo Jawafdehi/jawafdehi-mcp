@@ -212,7 +212,9 @@ class DocumentConverterTool(BaseTool):
             elif convert_fn:
                 markdown = convert_fn(file_path)
             else:
-                raise RuntimeError("Installed likhit package does not expose a supported API.")
+                raise RuntimeError(
+                    "Installed likhit package does not expose a supported API."
+                )
             return markdown, None
         except Exception as e:
             return "", str(e)

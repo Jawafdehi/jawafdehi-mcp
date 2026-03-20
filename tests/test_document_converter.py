@@ -1,4 +1,5 @@
 """Tests for the unified DocumentConverterTool."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
