@@ -3,8 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from likhit import extract
-from likhit.core import render_markdown
+import likhit
 from mcp.types import TextContent
 
 from .base import BaseTool
@@ -28,8 +27,6 @@ class LikhitExtractTool(BaseTool):
             "Uses the likhit extraction pipeline to parse PDFs with Nepali text "
             "(including Kalimati font fixing) and produce clean Markdown with "
             "YAML frontmatter.\n\n"
-            "Supported document types:\n"
-            "- ciaa-press-release: CIAA (अख्तियार दुरुपयोग अनुसन्धान आयोग) press release PDFs\n\n"
             "The file_path must point to a PDF file accessible on the local filesystem."
         )
 
@@ -42,44 +39,25 @@ class LikhitExtractTool(BaseTool):
                     "type": "string",
                     "description": "Absolute path to the PDF file on the local filesystem.",
                 },
-                "doc_type": {
-                    "type": "string",
-                    "enum": ["ciaa-press-release"],
-                    "description": "The type of Nepal government document to extract.",
-                },
-                "title": {
-                    "type": "string",
-                    "description": "Optional. Override the title extracted from the document.",
-                },
-                "publication_date": {
-                    "type": "string",
-                    "description": "Optional. Override the publication date (YYYY-MM-DD format).",
-                },
-                "source_url": {
-                    "type": "string",
-                    "description": "Optional. Attach a source URL to the extracted document metadata.",
-                },
-                "pages": {
-                    "type": "string",
-                    "description": "Optional. Page range to extract, e.g. '1-3' or '5'.",
-                },
                 "output_path": {
                     "type": "string",
-                    "description": "Optional. Absolute path to write the extracted Markdown file. Parent directories are created automatically.",
+                    "description": (
+                        "Optional. Absolute path to write the converted Markdown file. "
+                        "Parent directories are created automatically."
+                    ),
                 },
             },
-            "required": ["file_path", "doc_type"],
+            "required": ["file_path"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         file_path = arguments.get("file_path")
-        doc_type = arguments.get("doc_type")
 
-        if not file_path or not doc_type:
+        if not file_path:
             return [
                 TextContent(
                     type="text",
-                    text="Error: 'file_path' and 'doc_type' are required parameters.",
+                    text="Error: 'file_path' is a required parameter.",
                 )
             ]
 
@@ -100,16 +78,22 @@ class LikhitExtractTool(BaseTool):
                 )
             ]
 
+        if path.suffix.lower() != ".pdf":
+            return [
+                TextContent(
+                    type="text",
+                    text="Error extracting document: likhit only supports local PDF files.",
+                )
+            ]
+
         try:
-            result = extract(
-                str(path),
-                doc_type,
-                title=arguments.get("title"),
-                publication_date=arguments.get("publication_date"),
-                source_url=arguments.get("source_url"),
-                pages=arguments.get("pages"),
-            )
-            markdown = render_markdown(result)
+            convert_fn = getattr(likhit, "convert", None)
+            if not convert_fn:
+                raise RuntimeError(
+                    "Installed likhit package does not expose likhit.convert(file_path)."
+                )
+
+            markdown = convert_fn(str(path))
 
             output_path = arguments.get("output_path")
             if output_path:

@@ -1,6 +1,6 @@
 """Tests for the LikhitExtractTool."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -18,121 +18,81 @@ class TestLikhitExtractTool:
 
     def test_tool_has_description(self):
         assert "Nepal government PDF" in self.tool.description
-        assert "ciaa-press-release" in self.tool.description
 
     def test_input_schema_required_fields(self):
         schema = self.tool.input_schema
         assert "file_path" in schema["properties"]
-        assert "doc_type" in schema["properties"]
-        assert schema["required"] == ["file_path", "doc_type"]
+        assert schema["required"] == ["file_path"]
 
     def test_input_schema_optional_fields(self):
         schema = self.tool.input_schema
-        for field in (
-            "title",
-            "publication_date",
-            "source_url",
-            "pages",
-            "output_path",
-        ):
-            assert field in schema["properties"]
+        assert "output_path" in schema["properties"]
+        assert "doc_type" not in schema["properties"]
 
     @pytest.mark.asyncio
     async def test_missing_file_path(self):
-        result = await self.tool.execute({"doc_type": "ciaa-press-release"})
+        result = await self.tool.execute({})
         assert len(result) == 1
         assert "Error" in result[0].text
         assert "required" in result[0].text
 
     @pytest.mark.asyncio
-    async def test_missing_doc_type(self):
-        result = await self.tool.execute({"file_path": "/tmp/test.pdf"})
-        assert len(result) == 1
-        assert "Error" in result[0].text
-        assert "required" in result[0].text
-
-    @pytest.mark.asyncio
-    async def test_nonexistent_file(self):
+    async def test_nonexistent_file(self, tmp_path):
         result = await self.tool.execute(
-            {
-                "file_path": "/tmp/nonexistent_likhit_test.pdf",
-                "doc_type": "ciaa-press-release",
-            }
+            {"file_path": str(tmp_path / "nonexistent_likhit_test.pdf")}
         )
         assert len(result) == 1
         assert "File not found" in result[0].text
 
     @pytest.mark.asyncio
     async def test_path_is_directory(self, tmp_path):
-        result = await self.tool.execute(
-            {"file_path": str(tmp_path), "doc_type": "ciaa-press-release"}
-        )
+        result = await self.tool.execute({"file_path": str(tmp_path)})
         assert len(result) == 1
         assert "not a file" in result[0].text
 
     @pytest.mark.asyncio
-    async def test_successful_extraction(self, tmp_path):
-        """Test successful extraction with mocked likhit."""
+    async def test_rejects_non_pdf_file(self, tmp_path):
+        docx_file = tmp_path / "sample.docx"
+        docx_file.write_bytes(b"fake docx content")
+
+        result = await self.tool.execute({"file_path": str(docx_file)})
+
+        assert len(result) == 1
+        assert "only supports local PDF files" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_successful_conversion(self, tmp_path):
+        """Test successful conversion with mocked likhit."""
         pdf_file = tmp_path / "sample.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
-        mock_result = MagicMock()
-        fake_markdown = "---\ntitle: Test\n---\n\nExtracted content\n"
+        fake_markdown = "# Converted\n"
 
-        with (
-            patch(
-                "jawafdehi_mcp.tools.likhit_extract.extract", return_value=mock_result
-            ) as mock_extract,
-            patch(
-                "jawafdehi_mcp.tools.likhit_extract.render_markdown",
-                return_value=fake_markdown,
-            ),
-        ):
-            result = await self.tool.execute(
-                {
-                    "file_path": str(pdf_file),
-                    "doc_type": "ciaa-press-release",
-                    "title": "प्रेस विज्ञप्ति",
-                    "source_url": "https://ciaa.gov.np/press/123",
-                }
-            )
+        with patch(
+            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
+            return_value=fake_markdown,
+        ) as mock_convert:
+            result = await self.tool.execute({"file_path": str(pdf_file)})
 
         assert len(result) == 1
         assert result[0].text == fake_markdown
-        mock_extract.assert_called_once_with(
-            str(pdf_file),
-            "ciaa-press-release",
-            title="प्रेस विज्ञप्ति",
-            publication_date=None,
-            source_url="https://ciaa.gov.np/press/123",
-            pages=None,
-        )
+        mock_convert.assert_called_once_with(str(pdf_file))
 
     @pytest.mark.asyncio
-    async def test_successful_extraction_with_output_path(self, tmp_path):
+    async def test_successful_conversion_with_output_path(self, tmp_path):
         """Test that output_path writes the markdown to disk."""
         pdf_file = tmp_path / "sample.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
         output_file = tmp_path / "output" / "result.md"
 
-        fake_markdown = "---\ntitle: Test\n---\n\nExtracted content\n"
+        fake_markdown = "# Converted\n"
 
-        with (
-            patch(
-                "jawafdehi_mcp.tools.likhit_extract.extract",
-                return_value=MagicMock(),
-            ),
-            patch(
-                "jawafdehi_mcp.tools.likhit_extract.render_markdown",
-                return_value=fake_markdown,
-            ),
+        with patch(
+            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
+            return_value=fake_markdown,
         ):
             result = await self.tool.execute(
-                {
-                    "file_path": str(pdf_file),
-                    "doc_type": "ciaa-press-release",
-                    "output_path": str(output_file),
-                }
+                {"file_path": str(pdf_file), "output_path": str(output_file)}
             )
 
         assert len(result) == 1
@@ -148,13 +108,11 @@ class TestLikhitExtractTool:
         pdf_file.write_bytes(b"not a real pdf")
 
         with patch(
-            "jawafdehi_mcp.tools.likhit_extract.extract",
-            side_effect=Exception("Unsupported document type 'invalid'"),
+            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
+            side_effect=Exception("Unsupported input format"),
         ):
-            result = await self.tool.execute(
-                {"file_path": str(pdf_file), "doc_type": "ciaa-press-release"}
-            )
+            result = await self.tool.execute({"file_path": str(pdf_file)})
 
         assert len(result) == 1
         assert "Error extracting document" in result[0].text
-        assert "Unsupported document type" in result[0].text
+        assert "Unsupported input format" in result[0].text
