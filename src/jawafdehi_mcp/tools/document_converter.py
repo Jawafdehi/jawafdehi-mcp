@@ -15,14 +15,6 @@ from mcp.types import TextContent
 
 from .base import BaseTool
 
-# Supported Likhit document types
-LIKHIT_SUPPORTED_TYPES = ["ciaa-press-release"]
-
-try:
-    from likhit.core import render_markdown as likhit_render_markdown
-except ImportError:
-    likhit_render_markdown = None
-
 
 class DocumentConverterTool(BaseTool):
     """Unified tool for converting documents to Markdown with smart auto-detection.
@@ -76,8 +68,8 @@ class DocumentConverterTool(BaseTool):
                 "file_path": {
                     "type": "string",
                     "description": (
-                        "Absolute path to a local file. Used for Likhit extraction "
-                        "or converted to file:// URI for MarkItDown. "
+                        "Absolute path to a local file. Local PDFs are processed with "
+                        "Likhit; other local files are converted with MarkItDown. "
                         "Mutually exclusive with 'uri'."
                     ),
                 },
@@ -92,49 +84,11 @@ class DocumentConverterTool(BaseTool):
                         "Mutually exclusive with 'file_path'."
                     ),
                 },
-                "doc_type": {
-                    "type": "string",
-                    "enum": ["auto", "ciaa-press-release"],
-                    "description": (
-                        "Document type for specialized extraction:\n"
-                        "- 'ciaa-press-release': CIAA press release (uses Likhit)\n"
-                        "- 'auto': Auto-detect or use MarkItDown (default)\n"
-                        "If not specified, defaults to 'auto'."
-                    ),
-                },
                 "output_path": {
                     "type": "string",
                     "description": (
                         "Optional. Absolute path to write the converted Markdown file. "
                         "Parent directories are created automatically."
-                    ),
-                },
-                "title": {
-                    "type": "string",
-                    "description": (
-                        "Optional. Override the title (Likhit only). "
-                        "Only used when doc_type is a Likhit-supported type."
-                    ),
-                },
-                "publication_date": {
-                    "type": "string",
-                    "description": (
-                        "Optional. Override publication date in YYYY-MM-DD format (Likhit only). "
-                        "Only used when doc_type is a Likhit-supported type."
-                    ),
-                },
-                "source_url": {
-                    "type": "string",
-                    "description": (
-                        "Optional. Source URL for metadata (Likhit only). "
-                        "Only used when doc_type is a Likhit-supported type."
-                    ),
-                },
-                "pages": {
-                    "type": "string",
-                    "description": (
-                        "Optional. Page range to extract, e.g. '1-3' or '5' (Likhit only). "
-                        "Only used when doc_type is a Likhit-supported type."
                     ),
                 },
                 "enable_plugins": {
@@ -148,11 +102,6 @@ class DocumentConverterTool(BaseTool):
             },
             "required": [],
         }
-
-    def _should_use_likhit(self, arguments: dict[str, Any]) -> bool:
-        """Determine if we should use Likhit based on arguments."""
-        doc_type = arguments.get("doc_type", "auto")
-        return doc_type in LIKHIT_SUPPORTED_TYPES
 
     def _get_source_path(self, arguments: dict[str, Any]) -> tuple[str, bool]:
         """
@@ -184,37 +133,24 @@ class DocumentConverterTool(BaseTool):
 
         raise ValueError("Must specify either 'file_path' or 'uri'.")
 
-    async def _convert_with_likhit(
-        self, file_path: str, arguments: dict[str, Any]
-    ) -> tuple[str, str | None]:
+    def _should_use_likhit(self, source: str, is_local_file: bool) -> bool:
+        """Use likhit for local PDF files only."""
+        return is_local_file and Path(source).suffix.lower() == ".pdf"
+
+    async def _convert_with_likhit(self, file_path: str) -> tuple[str, str | None]:
         """
-        Convert document using Likhit.
+        Convert a local PDF with Likhit.
 
         Returns:
             tuple: (markdown_content, error_message)
         """
-        doc_type = arguments.get("doc_type")
-
         try:
-            extract_fn = getattr(likhit, "extract", None)
             convert_fn = getattr(likhit, "convert", None)
-
-            if extract_fn and likhit_render_markdown:
-                result = extract_fn(
-                    file_path,
-                    doc_type,
-                    title=arguments.get("title"),
-                    publication_date=arguments.get("publication_date"),
-                    source_url=arguments.get("source_url"),
-                    pages=arguments.get("pages"),
-                )
-                markdown = likhit_render_markdown(result)
-            elif convert_fn:
-                markdown = convert_fn(file_path)
-            else:
+            if not convert_fn:
                 raise RuntimeError(
-                    "Installed likhit package does not expose a supported API."
+                    "Installed likhit package does not expose likhit.convert(file_path)."
                 )
+            markdown = convert_fn(file_path)
             return markdown, None
         except Exception as e:
             return "", str(e)
@@ -241,7 +177,6 @@ class DocumentConverterTool(BaseTool):
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Execute document conversion with smart auto-detection."""
-
         # Get source path/URI
         try:
             source, is_local_file = self._get_source_path(arguments)
@@ -267,27 +202,26 @@ class DocumentConverterTool(BaseTool):
                 ]
 
         # Determine conversion method
-        use_likhit = self._should_use_likhit(arguments)
+        use_likhit = self._should_use_likhit(source, is_local_file)
         converter_used = None
         markdown = None
         error = None
 
         # Try Likhit first if applicable
-        if use_likhit and is_local_file:
+        if use_likhit:
             converter_used = "Likhit"
-            markdown, error = await self._convert_with_likhit(source, arguments)
+            markdown, error = await self._convert_with_likhit(source)
 
             # Fall back to MarkItDown if Likhit fails
             if error:
                 fallback_msg = (
                     f"⚠️ Likhit conversion failed: {error}\n"
-                    f"Falling back to MarkItDown (Nepali text may not be accurate)...\n\n"
+                    "Falling back to MarkItDown...\n\n"
                 )
                 converter_used = "MarkItDown (fallback)"
                 markdown, error = await self._convert_with_markitdown(source, arguments)
                 if not error:
                     markdown = fallback_msg + markdown
-
         # Use MarkItDown directly
         else:
             converter_used = "MarkItDown"
