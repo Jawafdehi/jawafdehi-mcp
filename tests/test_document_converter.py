@@ -57,9 +57,9 @@ class TestDocumentConverterTool:
         assert "both" in result[0].text.lower()
 
     @pytest.mark.asyncio
-    async def test_nonexistent_file(self):
+    async def test_nonexistent_file(self, tmp_path):
         result = await self.tool.execute(
-            {"file_path": "/tmp/nonexistent_unified_test.pdf"}
+            {"file_path": str(tmp_path / "nonexistent_unified_test.pdf")}
         )
         assert len(result) == 1
         assert "File not found" in result[0].text
