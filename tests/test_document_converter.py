@@ -250,6 +250,47 @@ class TestDocumentConverterTool:
         mock_convert.assert_called_once_with(str(pdf_file.resolve()))
 
     @pytest.mark.asyncio
+    async def test_uppercase_file_uri_conversion(self, tmp_path):
+        """FILE:// URIs should be treated as file URIs."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 fake")
+        uppercase_uri = pdf_file.resolve().as_uri().replace("file://", "FILE://", 1)
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.likhit.convert",
+            return_value="# Test\n",
+        ) as mock_convert:
+            result = await self.tool.execute({"uri": uppercase_uri})
+
+        assert len(result) == 1
+        assert "Error" not in result[0].text
+        mock_convert.assert_called_once_with(str(pdf_file.resolve()))
+
+    @pytest.mark.asyncio
+    async def test_uppercase_https_uri_uses_markitdown(self):
+        """HTTPS:// URIs should still be treated as web URIs."""
+        fake_markdown = "# Web Document\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute(
+                {"uri": "HTTPS://example.com/document.pdf"}
+            )
+
+        assert len(result) == 1
+        assert "MarkItDown" in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(
+            "HTTPS://example.com/document.pdf"
+        )
+
+    @pytest.mark.asyncio
     async def test_rejects_remote_file_uri_netloc(self):
         """Remote file URIs should be rejected before path validation."""
         result = await self.tool.execute({"uri": "file://example.com/test.pdf"})

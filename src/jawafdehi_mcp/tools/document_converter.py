@@ -119,7 +119,7 @@ class DocumentConverterTool(BaseTool):
             return file_path, True
 
         if uri:
-            if uri.startswith("file://"):
+            if uri.lower().startswith("file://"):
                 parsed = urlparse(uri)
                 if parsed.netloc not in ("", "localhost"):
                     raise ValueError(
@@ -162,7 +162,9 @@ class DocumentConverterTool(BaseTool):
             tuple: (markdown_content, error_message)
         """
         try:
-            if not source.startswith(("http://", "https://", "file://", "data:")):
+            if not source.lower().startswith(
+                ("http://", "https://", "file://", "data:")
+            ):
                 source = Path(source).resolve().as_uri()
 
             enable_plugins = arguments.get("enable_plugins", False)
