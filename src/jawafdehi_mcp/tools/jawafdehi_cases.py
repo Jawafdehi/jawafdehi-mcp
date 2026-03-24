@@ -376,3 +376,100 @@ class PatchJawafdehiCaseTool(BaseTool):
             )
         except Exception as e:
             return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class SubmitNESChangeTool(BaseTool):
+    """Tool for submitting authenticated NES queue changes via Jawafdehi API."""
+
+    @property
+    def name(self) -> str:
+        return "submit_nes_change"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Submit a Jawafdehi NES queue change request for one of the supported "
+            "actions: ADD_NAME, CREATE_ENTITY, or UPDATE_ENTITY."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["ADD_NAME", "CREATE_ENTITY", "UPDATE_ENTITY"],
+                    "description": "NES queue action type.",
+                },
+                "payload": {
+                    "type": "object",
+                    "description": "Action-specific payload accepted by Jawafdehi NESQ.",
+                },
+                "change_description": {
+                    "type": "string",
+                    "description": "Human-readable summary of the requested change.",
+                },
+                "auto_approve": {
+                    "type": "boolean",
+                    "description": (
+                        "Optional privileged flag to request immediate approval. "
+                        "The API enforces permission checks."
+                    ),
+                    "default": False,
+                },
+            },
+            "required": ["action", "payload", "change_description"],
+        }
+
+    def _get_api_token(self) -> str:
+        token = _get_jawafdehi_api_token()
+        if not token:
+            raise ValueError(
+                "JAWAFDEHI_API_TOKEN environment variable is required for "
+                "submit_nes_change."
+            )
+        return token
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        try:
+            token = self._get_api_token()
+        except ValueError as exc:
+            return _error_text_content(f"Error: {exc}")
+
+        request_body = {
+            "action": arguments.get("action"),
+            "payload": arguments.get("payload"),
+            "change_description": arguments.get("change_description"),
+        }
+        if "auto_approve" in arguments:
+            request_body["auto_approve"] = arguments["auto_approve"]
+
+        base_url = _get_jawafdehi_base_url()
+        url = f"{base_url}/api/submit_nes_change"
+        headers = {"Authorization": f"Token {token}"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=request_body,
+                    headers=headers,
+                    timeout=30.0,
+                )
+
+            if response.status_code == 201:
+                return _json_text_content(response.json())
+
+            try:
+                error_body = json.dumps(response.json(), indent=2, ensure_ascii=False)
+            except ValueError:
+                error_body = response.text
+            return _error_text_content(
+                f"Error submitting NES change: HTTP {response.status_code}\n\n"
+                f"{error_body}"
+            )
+        except httpx.HTTPError as e:
+            return _error_text_content(f"Error submitting NES change: {str(e)}")
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")

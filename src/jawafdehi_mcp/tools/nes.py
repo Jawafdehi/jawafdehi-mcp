@@ -13,6 +13,27 @@ def _get_nes_base_url() -> str:
     return os.getenv("NES_API_BASE_URL", "https://nes.newnepal.org").rstrip("/")
 
 
+def _build_text_response(payload: Any) -> list[TextContent]:
+    return [
+        TextContent(
+            type="text",
+            text=json.dumps(payload, indent=2, ensure_ascii=False),
+        )
+    ]
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return response.text or response.reason_phrase
+
+    if isinstance(payload, dict):
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    return str(payload)
+
+
 class SearchNESEntitiesTool(BaseTool):
     """Tool for searching NES entities."""
 
@@ -218,3 +239,128 @@ class GetNESTagsTool(BaseTool):
             ]
         except Exception as e:
             return [TextContent(type="text", text=f"Unexpected error: {str(e)}")]
+
+
+class GetNESEntityPrefixesTool(BaseTool):
+    """Tool for fetching available NES entity prefixes."""
+
+    @property
+    def name(self) -> str:
+        return "get_nes_entity_prefixes"
+
+    @property
+    def description(self) -> str:
+        return "Fetch the available NES entity prefixes and related metadata."
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {},
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        url = f"{_get_nes_base_url()}/api/entity_prefixes"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=30.0)
+
+            if response.status_code == 200:
+                return _build_text_response(response.json())
+
+            error_message = _extract_error_message(response)
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error fetching NES entity prefixes: "
+                        f"HTTP {response.status_code}\n\n{error_message}"
+                    ),
+                )
+            ]
+        except httpx.TimeoutException:
+            return [
+                TextContent(
+                    type="text",
+                    text="Error fetching NES entity prefixes: request timed out.",
+                )
+            ]
+        except httpx.HTTPError as exc:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error fetching NES entity prefixes: {str(exc)}",
+                )
+            ]
+        except Exception as exc:
+            return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]
+
+
+class GetNESEntityPrefixSchemaTool(BaseTool):
+    """Tool for fetching JSON schema for a NES entity prefix."""
+
+    @property
+    def name(self) -> str:
+        return "get_nes_entity_prefix_schema"
+
+    @property
+    def description(self) -> str:
+        return "Fetch the JSON schema for a specific NES entity prefix."
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "prefix": {
+                    "type": "string",
+                    "description": "NES entity prefix to inspect.",
+                }
+            },
+            "required": ["prefix"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        prefix = arguments.get("prefix")
+        if not prefix:
+            return [TextContent(type="text", text="Error: prefix is required.")]
+
+        encoded_prefix = urllib.parse.quote(prefix, safe="")
+        url = f"{_get_nes_base_url()}/api/entity_prefixes/{encoded_prefix}/schema"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, timeout=30.0)
+
+            if response.status_code == 200:
+                return _build_text_response(response.json())
+
+            error_message = _extract_error_message(response)
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error fetching NES entity prefix schema: "
+                        f"HTTP {response.status_code}\n\n{error_message}"
+                    ),
+                )
+            ]
+        except httpx.TimeoutException:
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error fetching NES entity prefix schema: " "request timed out."
+                    ),
+                )
+            ]
+        except httpx.HTTPError as exc:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Error fetching NES entity prefix schema: {str(exc)}",
+                )
+            ]
+        except Exception as exc:
+            return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]

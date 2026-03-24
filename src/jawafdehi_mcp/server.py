@@ -12,10 +12,13 @@ from .tools import (
     DateConverterTool,
     DocumentConverterTool,
     GetJawafdehiCaseTool,
+    GetNESEntityPrefixesTool,
+    GetNESEntityPrefixSchemaTool,
     NGMExtractCaseDataTool,
     NGMJudicialTool,
     PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
+    SubmitNESChangeTool,
 )
 from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
 
@@ -30,8 +33,11 @@ TOOLS: list[BaseTool] = [
     GetJawafdehiCaseTool(),
     CreateJawafdehiCaseTool(),
     PatchJawafdehiCaseTool(),
+    SubmitNESChangeTool(),
     SearchNESEntitiesTool(),
     GetNESEntitiesTool(),
+    GetNESEntityPrefixesTool(),
+    GetNESEntityPrefixSchemaTool(),
     GetNESTagsTool(),
     DateConverterTool(),
     DocumentConverterTool(),

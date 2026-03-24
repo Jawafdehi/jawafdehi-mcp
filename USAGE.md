@@ -9,11 +9,12 @@ cd services/jawafdehi-mcp
 poetry install
 ```
 
-### 2. Set Environment Variable
+### 2. Set Environment Variables
 
 ```bash
 export NGM_DATABASE_URL="postgresql://user:password@host:5432/ngm_database"
-export JAWAFDEHI_API_TOKEN="your-drf-token"
+export JAWAFDEHI_API_BASE_URL="https://portal.jawafdehi.org"
+export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
 ### 3. Run the Server
@@ -35,7 +36,8 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
       "cwd": "/absolute/path/to/services/jawafdehi-mcp",
       "env": {
         "NGM_DATABASE_URL": "postgresql://user:password@host:5432/database",
-        "JAWAFDEHI_API_TOKEN": "your-drf-token"
+        "JAWAFDEHI_API_BASE_URL": "https://portal.jawafdehi.org",
+        "JAWAFDEHI_API_TOKEN": "your-jawafdehi-api-token"
       }
     }
   }
@@ -43,24 +45,6 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
 ```
 
 ## Available Tools
-
-### create_jawafdehi_case
-
-Create a draft Jawafdehi case using a simplified authenticated payload.
-
-**Parameters:**
-- `title` (string, required)
-- `case_type` (string, required): `CORRUPTION` or `PROMISES`
-- `short_description` (string, optional)
-- `description` (string, optional)
-
-### patch_jawafdehi_case
-
-Patch an existing Jawafdehi case using raw RFC 6902 JSON Patch operations.
-
-**Parameters:**
-- `case_id` (integer, required)
-- `operations` (array, required)
 
 ### ngm_query_judicial
 
@@ -147,6 +131,112 @@ GROUP BY judge_names
 ORDER BY hearing_count DESC
 LIMIT 20
 ```
+
+### submit_nes_change
+
+Submit an authenticated NES queue change request through Jawafdehi API.
+
+**Parameters:**
+- `action` (string, required): One of `ADD_NAME`, `CREATE_ENTITY`, or `UPDATE_ENTITY`
+- `payload` (object, required): Action-specific NES queue payload
+- `change_description` (string, required): Human-readable summary of the change
+
+**Example: `ADD_NAME`**
+
+```json
+{
+  "action": "ADD_NAME",
+  "payload": {
+    "entity_id": "entity:person/sher-bahadur-deuba",
+    "name": {
+      "kind": "ALIAS",
+      "en": { "full": "S. B. Deuba" }
+    },
+    "author_id": "jawafdehi-queue"
+  },
+  "change_description": "Add common English alias used in reporting"
+}
+```
+
+**Example: `CREATE_ENTITY`**
+
+```json
+{
+  "action": "CREATE_ENTITY",
+  "payload": {
+    "entity_type": "person",
+    "entity_data": {
+      "slug": "pushpa-kamal-dahal",
+      "names": [
+        {
+          "kind": "PRIMARY",
+          "en": { "full": "Pushpa Kamal Dahal" },
+          "ne": { "full": "पुष्पकमल दाहाल" }
+        }
+      ]
+    },
+    "author_id": "jawafdehi-queue"
+  },
+  "change_description": "Create missing person entity for case linkage"
+}
+```
+
+**Example: `UPDATE_ENTITY`**
+
+```json
+{
+  "action": "UPDATE_ENTITY",
+  "payload": {
+    "entity_id": "entity:person/sher-bahadur-deuba",
+    "updates": {
+      "tags": ["politician", "nepali-congress", "prime-minister"]
+    },
+    "author_id": "jawafdehi-queue"
+  },
+  "change_description": "Add missing role tags for search and filtering"
+}
+```
+
+The tool returns the serialized queue item created by Jawafdehi API, including
+its `id`, `action`, and current `status`.
+
+### get_nes_entity_prefixes
+
+Fetch the current list of valid NES entity prefixes that the chat client can use
+when preparing `CREATE_ENTITY` requests.
+
+**Parameters:**
+- None
+
+**Example response shape:**
+
+```json
+{
+  "prefixes": [
+    "person",
+    "organization/political_party",
+    "organization/nepal_govt/moha"
+  ]
+}
+```
+
+### get_nes_entity_prefix_schema
+
+Fetch the JSON schema for one NES entity prefix.
+
+**Parameters:**
+- `prefix` (string, required): NES entity prefix, for example `person` or `organization/political_party`
+
+**Example input:**
+
+```json
+{
+  "prefix": "organization/political_party"
+}
+```
+
+The tool URL-encodes the prefix path segment before calling NES, so nested
+prefixes are handled correctly.
 
 ## Response Format
 

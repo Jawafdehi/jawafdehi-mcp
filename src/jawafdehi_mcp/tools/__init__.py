@@ -8,8 +8,15 @@ from .jawafdehi_cases import (
     GetJawafdehiCaseTool,
     PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
+    SubmitNESChangeTool,
 )
-from .nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
+from .nes import (
+    GetNESEntitiesTool,
+    GetNESEntityPrefixesTool,
+    GetNESEntityPrefixSchemaTool,
+    GetNESTagsTool,
+    SearchNESEntitiesTool,
+)
 from .ngm_extract import NGMExtractCaseDataTool
 from .ngm_judicial import NGMJudicialTool
 
@@ -21,8 +28,11 @@ __all__ = [
     "GetJawafdehiCaseTool",
     "CreateJawafdehiCaseTool",
     "PatchJawafdehiCaseTool",
+    "SubmitNESChangeTool",
     "SearchNESEntitiesTool",
     "GetNESEntitiesTool",
+    "GetNESEntityPrefixesTool",
+    "GetNESEntityPrefixSchemaTool",
     "GetNESTagsTool",
     "DateConverterTool",
     "DocumentConverterTool",
