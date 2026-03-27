@@ -154,6 +154,7 @@ Note: The `scraped_dates` table is excluded from queries.
 
 - [Architecture Overview](docs/ARCHITECTURE.md) - System design and structure
 - [Adding Tools Guide](docs/ADDING_TOOLS.md) - How to add new tools
+- [Publishing Guide](docs/PUBLISHING.md) - How to release a new version to PyPI
 
 ## Development
 
