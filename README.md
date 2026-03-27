@@ -4,6 +4,12 @@ Model Context Protocol (MCP) server providing tools for integrating LLM workflow
 
 ## Available MCP Tools
 
+- Modular tool architecture for easy extension
+- **Unified document converter** with smart auto-detection (Likhit + MarkItDown)
+- Read-only access with query validation
+- Timeout protection (default 15s)
+- Comprehensive error handling
+
 ### Jawafdehi.org
 
 - `search_jawafdehi_cases`: Search published Jawafdehi accountability cases
@@ -29,14 +35,6 @@ Model Context Protocol (MCP) server providing tools for integrating LLM workflow
 
 - `convert_to_markdown`: Convert documents with smart auto-detection (Likhit for Nepal government PDFs, MarkItDown for Office documents/web pages/general PDFs, with automatic fallback)
 - `convert_date`: Convert dates between AD and BS calendars
-
-### Shared Platform Capabilities
-
-- Modular tool architecture for easy extension
-- **Unified document converter** with smart auto-detection (Likhit + MarkItDown)
-- Read-only access with query validation
-- Timeout protection (default 15s)
-- Comprehensive error handling
 
 ## Architecture
 
@@ -67,9 +65,16 @@ See `tools/example_tool.py` for a template.
 
 ## Installation
 
+Install via PyPI (recommended):
+
 ```bash
-cd services/jawafdehi-mcp
-poetry install
+uv tool install jawafdehi-mcp
+```
+
+If you want the latest unreleased changes, install from GitHub instead:
+
+```bash
+uv tool install git+https://github.com/NewNepal-org/jawafdehi-mcp.git
 ```
 
 ## Configuration
@@ -81,6 +86,8 @@ export JAWAFDEHI_API_BASE_URL="https://portal.jawafdehi.org"
 export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
+To request a Jawafdehi API token, contact `inquiry@jawafdehi.org` or WhatsApp: `+1 206-530-9098`.
+
 ## Usage
 
 ### As MCP Server
@@ -91,9 +98,8 @@ Add to your MCP client configuration:
 {
   "mcpServers": {
     "jawafdehi": {
-      "command": "poetry",
-      "args": ["run", "jawafdehi-mcp"],
-      "cwd": "/path/to/services/jawafdehi-mcp",
+      "command": "uvx",
+      "args": ["jawafdehi-mcp"],
       "env": {
         "JAWAFDEHI_API_BASE_URL": "https://portal.jawafdehi.org",
         "JAWAFDEHI_API_TOKEN": "your-jawafdehi-api-token"
