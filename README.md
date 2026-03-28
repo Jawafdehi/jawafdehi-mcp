@@ -74,7 +74,7 @@ uv tool install jawafdehi-mcp
 If you want the latest unreleased changes, install from GitHub instead:
 
 ```bash
-uv tool install git+https://github.com/NewNepal-org/jawafdehi-mcp.git
+uv tool install git+https://github.com/Jawafdehi/jawafdehi-mcp.git
 ```
 
 ## Configuration
@@ -137,7 +137,7 @@ as `person` or `organization/political_party`. Prefixes containing slashes
 before being sent in the request path.
 
 These tools read from `NES_API_BASE_URL`, which defaults to
-`https://nes.newnepal.org`.
+`https://nes.jawafdehi.org`.
 
 ### Available Tables
 

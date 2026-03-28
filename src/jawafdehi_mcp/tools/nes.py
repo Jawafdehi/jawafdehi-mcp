@@ -10,7 +10,7 @@ from .base import BaseTool
 
 
 def _get_nes_base_url() -> str:
-    return os.getenv("NES_API_BASE_URL", "https://nes.newnepal.org").rstrip("/")
+    return os.getenv("NES_API_BASE_URL", "https://nes.jawafdehi.org").rstrip("/")
 
 
 def _build_text_response(payload: Any) -> list[TextContent]:

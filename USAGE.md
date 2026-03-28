@@ -340,4 +340,4 @@ Keep `timeout` between 1 and 15:
 
 ## Support
 
-For issues or questions, please open an issue on the NewNepal.org GitHub repository.
+For issues or questions, please open an issue on the Jawafdehi.org GitHub repository.
