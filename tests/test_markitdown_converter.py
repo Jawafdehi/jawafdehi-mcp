@@ -19,8 +19,8 @@ class TestMarkItDownConverterTool:
     def test_tool_has_description(self):
         assert "Convert documents to Markdown" in self.tool.description
         assert "DOCX" in self.tool.description
-        assert "WARNING" in self.tool.description
-        assert "Nepali" in self.tool.description
+        assert "plugins are enabled" in self.tool.description
+        assert "`likhit`" in self.tool.description
 
     def test_input_schema_required_fields(self):
         schema = self.tool.input_schema
@@ -128,10 +128,29 @@ class TestMarkItDownConverterTool:
         mock_markitdown.assert_called_once_with(enable_plugins=True)
 
     @pytest.mark.asyncio
+    async def test_enable_plugins_defaults_to_true(self):
+        """Test that plugins are enabled by default."""
+        fake_markdown = "# Test\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.markitdown_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            await self.tool.execute({"uri": "https://example.com/doc.pdf"})
+
+        mock_markitdown.assert_called_once_with(enable_plugins=True)
+
+    @pytest.mark.asyncio
     async def test_file_uri_validation(self, tmp_path):
-        """Test that file:// URIs are validated before conversion."""
+        """Test that file:// URIs are validated and written to sibling markdown."""
         pdf_file = tmp_path / "sample.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
+        output_file = tmp_path / "sample.md"
 
         fake_markdown = "# PDF Content\n"
         mock_result = MagicMock()
@@ -147,7 +166,9 @@ class TestMarkItDownConverterTool:
             result = await self.tool.execute({"uri": f"file://{pdf_file}"})
 
         assert len(result) == 1
-        assert result[0].text == fake_markdown
+        assert "Markdown written to" in result[0].text
+        assert output_file.exists()
+        assert output_file.read_text(encoding="utf-8") == fake_markdown
 
     @pytest.mark.asyncio
     async def test_markitdown_error_propagation(self):

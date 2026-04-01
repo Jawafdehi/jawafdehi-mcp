@@ -1,6 +1,6 @@
-"""Tests for the LikhitExtractTool."""
+"""Tests for the legacy LikhitExtractTool compatibility wrapper."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,7 @@ class TestLikhitExtractTool:
         assert self.tool.name == "likhit_extract"
 
     def test_tool_has_description(self):
-        assert "Nepal government PDF" in self.tool.description
+        assert "Deprecated compatibility wrapper" in self.tool.description
 
     def test_input_schema_required_fields(self):
         schema = self.tool.input_schema
@@ -62,21 +62,30 @@ class TestLikhitExtractTool:
 
     @pytest.mark.asyncio
     async def test_successful_conversion(self, tmp_path):
-        """Test successful conversion with mocked likhit."""
+        """Test successful conversion writes a sibling markdown file."""
         pdf_file = tmp_path / "sample.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
+        output_file = tmp_path / "sample.md"
 
         fake_markdown = "# Converted\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
 
         with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
-            return_value=fake_markdown,
-        ) as mock_convert:
+            "jawafdehi_mcp.tools.likhit_extract.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute({"file_path": str(pdf_file)})
 
         assert len(result) == 1
-        assert result[0].text == fake_markdown
-        mock_convert.assert_called_once_with(str(pdf_file))
+        assert "Markdown written to" in result[0].text
+        assert fake_markdown in result[0].text
+        mock_markitdown.assert_called_once_with(enable_plugins=True)
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
+        assert output_file.exists()
+        assert output_file.read_text(encoding="utf-8") == fake_markdown
 
     @pytest.mark.asyncio
     async def test_successful_conversion_with_output_path(self, tmp_path):
@@ -87,10 +96,15 @@ class TestLikhitExtractTool:
 
         fake_markdown = "# Converted\n"
 
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
         with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
-            return_value=fake_markdown,
-        ):
+            "jawafdehi_mcp.tools.likhit_extract.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute(
                 {"file_path": str(pdf_file), "output_path": str(output_file)}
             )
@@ -103,12 +117,12 @@ class TestLikhitExtractTool:
 
     @pytest.mark.asyncio
     async def test_likhit_error_propagation(self, tmp_path):
-        """Test that likhit errors are reported as user-friendly messages."""
+        """Test that MarkItDown errors are reported as user-friendly messages."""
         pdf_file = tmp_path / "bad.pdf"
         pdf_file.write_bytes(b"not a real pdf")
 
         with patch(
-            "jawafdehi_mcp.tools.likhit_extract.likhit.convert",
+            "jawafdehi_mcp.tools.likhit_extract.MarkItDown",
             side_effect=Exception("Unsupported input format"),
         ):
             result = await self.tool.execute({"file_path": str(pdf_file)})
