@@ -5,6 +5,7 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+from dotenv import load_dotenv
 
 from .tools import (
     BaseTool,
@@ -21,6 +22,9 @@ from .tools import (
     SubmitNESChangeTool,
 )
 from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
+
+# Load local environment configuration for API tokens and OCR settings.
+load_dotenv()
 
 # Initialize MCP server
 app = Server("jawafdehi-mcp")
