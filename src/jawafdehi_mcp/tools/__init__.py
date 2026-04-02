@@ -10,6 +10,7 @@ from .jawafdehi_cases import (
     SearchJawafdehiCasesTool,
     SubmitNESChangeTool,
 )
+from .likhit_extract import LikhitExtractTool
 from .nes import (
     GetNESEntitiesTool,
     GetNESEntityPrefixesTool,
@@ -34,6 +35,7 @@ __all__ = [
     "GetNESEntityPrefixesTool",
     "GetNESEntityPrefixSchemaTool",
     "GetNESTagsTool",
+    "LikhitExtractTool",
     "DateConverterTool",
     "DocumentConverterTool",
 ]

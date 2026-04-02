@@ -9,6 +9,9 @@ cd services/jawafdehi-mcp
 poetry install
 ```
 
+Document conversion is handled by MarkItDown. Nepal-specific PDF and legacy `.doc`
+support comes from the installed `markitdown-likhit` plugin dependency.
+
 ### 2. Set Environment Variables
 
 ```bash

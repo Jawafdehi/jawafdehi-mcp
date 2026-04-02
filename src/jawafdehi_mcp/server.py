@@ -20,6 +20,7 @@ from .tools import (
     PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
     SubmitNESChangeTool,
+    LikhitExtractTool,
 )
 from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
 
@@ -44,6 +45,7 @@ TOOLS: list[BaseTool] = [
     GetNESEntityPrefixSchemaTool(),
     GetNESTagsTool(),
     DateConverterTool(),
+    LikhitExtractTool(),
     DocumentConverterTool(),
 ]
 

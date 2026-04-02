@@ -23,7 +23,9 @@ class LikhitExtractTool(BaseTool):
             "This keeps the legacy `likhit_extract` tool shape for local PDF files, "
             "but conversion now flows through MarkItDown and the installed `likhit` "
             "plugin rather than `likhit.convert(...)`.\n\n"
-            "The file_path must point to a PDF file accessible on the local filesystem."
+            "The file_path must point to a PDF file accessible on the local filesystem. "
+            "By default the extracted Markdown is saved beside the PDF as a `.md` file, "
+            "or you can provide `output_path` to choose where it is written."
         )
 
     @property
@@ -99,7 +101,10 @@ class LikhitExtractTool(BaseTool):
             return [
                 TextContent(
                     type="text",
-                    text=f"Markdown written to {out}\n\n{markdown}",
+                    text=(
+                        "✅ Converted with MarkItDown + plugins\n"
+                        f"📄 Markdown written to {out}"
+                    ),
                 )
             ]
 
