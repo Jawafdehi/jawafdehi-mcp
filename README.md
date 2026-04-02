@@ -1,11 +1,11 @@
 # Jawafdehi MCP Server
 
-Model Context Protocol (MCP) server providing tools for integrating LLM workflows with Jawafdehi products, including Jawafdehi.org, Nepal Entity Service (NES), Nepal Government Modernization (NGM), and the `likhit` Markdown conversion tool.
+Model Context Protocol (MCP) server providing tools for integrating LLM workflows with Jawafdehi products, including Jawafdehi.org, Nepal Entity Service (NES), Nepal Government Modernization (NGM), and MarkItDown-based document conversion with the `likhit` plugin.
 
 ## Available MCP Tools
 
 - Modular tool architecture for easy extension
-- **Unified document converter** with smart auto-detection (Likhit + MarkItDown)
+- **Unified document converter** powered by MarkItDown with plugin support
 - Read-only access with query validation
 - Timeout protection (default 15s)
 - Comprehensive error handling
@@ -33,7 +33,7 @@ Model Context Protocol (MCP) server providing tools for integrating LLM workflow
 
 ### Likhit and Document Conversion
 
-- `convert_to_markdown`: Convert documents with smart auto-detection (Likhit for Nepal government PDFs, MarkItDown for Office documents/web pages/general PDFs, with automatic fallback)
+- `convert_to_markdown`: Convert documents through MarkItDown with plugins enabled by default; the `likhit` plugin adds Nepal-specific handling for supported PDFs and legacy `.doc` files. Markdown is returned directly by default, or written to a file when `output_path` is provided
 - `convert_date`: Convert dates between AD and BS calendars
 
 ## Architecture
@@ -70,6 +70,7 @@ Install via PyPI (recommended):
 ```bash
 uv tool install jawafdehi-mcp
 ```
+
 
 If you want the latest unreleased changes, install from GitHub instead:
 

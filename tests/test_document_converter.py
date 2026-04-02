@@ -17,9 +17,9 @@ class TestDocumentConverterTool:
         assert self.tool.name == "convert_to_markdown"
 
     def test_tool_has_description(self):
-        assert "smart auto-detection" in self.tool.description
-        assert "Likhit" in self.tool.description
         assert "MarkItDown" in self.tool.description
+        assert "plugins enabled by default" in self.tool.description
+        assert "`likhit` plugin" in self.tool.description
 
     def test_input_schema_has_all_fields(self):
         schema = self.tool.input_schema
@@ -36,7 +36,7 @@ class TestDocumentConverterTool:
         assert "title" not in schema["properties"]
 
     def test_input_schema_no_required_fields(self):
-        """All fields are optional to support both Likhit and MarkItDown."""
+        """All fields are optional to support both file paths and URIs."""
         schema = self.tool.input_schema
         assert schema["required"] == []
 
@@ -71,57 +71,32 @@ class TestDocumentConverterTool:
         assert "not a file" in result[0].text
 
     @pytest.mark.asyncio
-    async def test_likhit_conversion_success_for_local_pdf(self, tmp_path):
-        """Local PDFs should use likhit.convert."""
+    async def test_local_pdf_uses_markitdown_with_plugins_by_default(self, tmp_path):
+        """Local PDFs should route through MarkItDown and return markdown by default."""
         pdf_file = tmp_path / "ciaa.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake content")
 
-        fake_markdown = "# Converted with Likhit\n"
+        fake_markdown = "# Converted with plugin\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
 
         with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value=fake_markdown,
-        ) as mock_convert:
-            result = await self.tool.execute({"file_path": str(pdf_file)})
-
-        assert len(result) == 1
-        assert "Likhit" in result[0].text
-        assert fake_markdown in result[0].text
-        mock_convert.assert_called_once_with(str(pdf_file))
-
-    @pytest.mark.asyncio
-    async def test_likhit_fallback_to_markitdown(self, tmp_path):
-        """Test fallback to MarkItDown when Likhit fails."""
-        pdf_file = tmp_path / "ciaa.pdf"
-        pdf_file.write_bytes(b"%PDF-1.4 fake content")
-
-        markitdown_markdown = "# Fallback Content\n"
-        mock_md_result = MagicMock()
-        mock_md_result.markdown = markitdown_markdown
-
-        with (
-            patch(
-                "jawafdehi_mcp.tools.document_converter.likhit.convert",
-                side_effect=Exception("Likhit conversion failed"),
-            ),
-            patch(
-                "jawafdehi_mcp.tools.document_converter.MarkItDown"
-            ) as mock_markitdown,
-        ):
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
             mock_converter = MagicMock()
-            mock_converter.convert_uri.return_value = mock_md_result
+            mock_converter.convert_uri.return_value = mock_result
             mock_markitdown.return_value = mock_converter
-
             result = await self.tool.execute({"file_path": str(pdf_file)})
 
         assert len(result) == 1
-        assert "fallback" in result[0].text.lower()
-        assert "MarkItDown" in result[0].text
-        assert markitdown_markdown in result[0].text
+        assert "MarkItDown + plugins" in result[0].text
+        assert fake_markdown in result[0].text
+        mock_markitdown.assert_called_once_with(enable_plugins=True)
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
 
     @pytest.mark.asyncio
     async def test_markitdown_direct_with_file_path(self, tmp_path):
-        """Non-PDF local files should use MarkItDown."""
+        """Non-PDF local files should still use MarkItDown and return markdown."""
         docx_file = tmp_path / "document.docx"
         docx_file.write_bytes(b"fake docx content")
 
@@ -139,11 +114,35 @@ class TestDocumentConverterTool:
             result = await self.tool.execute({"file_path": str(docx_file)})
 
         assert len(result) == 1
-        assert "MarkItDown" in result[0].text
+        assert "MarkItDown + plugins" in result[0].text
         assert fake_markdown in result[0].text
         mock_converter.convert_uri.assert_called_once()
         call_args = mock_converter.convert_uri.call_args[0][0]
         assert call_args == docx_file.resolve().as_uri()
+
+    @pytest.mark.asyncio
+    async def test_legacy_doc_uses_unified_plugin_enabled_path(self, tmp_path):
+        """Legacy DOC files should be accepted by the unified MarkItDown path."""
+        doc_file = tmp_path / "legacy.doc"
+        doc_file.write_bytes(b"fake doc content")
+
+        fake_markdown = "# Legacy Doc\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute({"file_path": str(doc_file)})
+
+        assert len(result) == 1
+        assert fake_markdown in result[0].text
+        mock_markitdown.assert_called_once_with(enable_plugins=True)
+        mock_converter.convert_uri.assert_called_once_with(doc_file.resolve().as_uri())
 
     @pytest.mark.asyncio
     async def test_markitdown_with_uri(self):
@@ -164,7 +163,7 @@ class TestDocumentConverterTool:
             )
 
         assert len(result) == 1
-        assert "MarkItDown" in result[0].text
+        assert "MarkItDown + plugins" in result[0].text
         assert fake_markdown in result[0].text
         mock_converter.convert_uri.assert_called_once_with(
             "https://example.com/document.pdf"
@@ -179,10 +178,15 @@ class TestDocumentConverterTool:
 
         fake_markdown = "# Test\n"
 
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
         with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value=fake_markdown,
-        ):
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute(
                 {"file_path": str(pdf_file), "output_path": str(output_file)}
             )
@@ -194,8 +198,26 @@ class TestDocumentConverterTool:
         assert output_file.read_text(encoding="utf-8") == fake_markdown
 
     @pytest.mark.asyncio
-    async def test_enable_plugins_parameter(self):
-        """Test that enable_plugins is passed to MarkItDown."""
+    async def test_enable_plugins_defaults_to_true(self):
+        """Plugin-backed conversion is enabled by default."""
+        fake_markdown = "# Test\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            await self.tool.execute({"uri": "https://example.com/doc.pdf"})
+
+        mock_markitdown.assert_called_once_with(enable_plugins=True)
+
+    @pytest.mark.asyncio
+    async def test_enable_plugins_false_bypasses_plugins(self):
+        """Explicitly disabling plugins should be passed through."""
         fake_markdown = "# Test\n"
         mock_result = MagicMock()
         mock_result.markdown = fake_markdown
@@ -208,29 +230,63 @@ class TestDocumentConverterTool:
             mock_markitdown.return_value = mock_converter
 
             await self.tool.execute(
-                {"uri": "https://example.com/doc.pdf", "enable_plugins": True}
+                {"uri": "https://example.com/doc.pdf", "enable_plugins": False}
             )
 
-        mock_markitdown.assert_called_once_with(enable_plugins=True)
+        mock_markitdown.assert_called_once_with(enable_plugins=False)
 
     @pytest.mark.asyncio
     async def test_file_uri_conversion(self, tmp_path):
-        """Test that file:// URIs are properly handled."""
+        """Test that file:// URIs are converted and returned directly."""
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_bytes(b"%PDF-1.4 fake")
 
         fake_markdown = "# Test\n"
 
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
         with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value=fake_markdown,
-        ) as mock_convert:
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute({"uri": pdf_file.resolve().as_uri()})
 
         assert len(result) == 1
-        assert "Likhit" in result[0].text
+        assert "MarkItDown + plugins" in result[0].text
         assert "Error" not in result[0].text
-        mock_convert.assert_called_once_with(str(pdf_file.resolve()))
+        assert fake_markdown in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
+
+    @pytest.mark.asyncio
+    async def test_rejects_output_path_matching_source_file(self, tmp_path):
+        """Explicit output_path must not overwrite the source file."""
+        markdown_file = tmp_path / "already.md"
+        markdown_file.write_text("# Existing\n", encoding="utf-8")
+
+        fake_markdown = "# Converted\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute(
+                {
+                    "file_path": str(markdown_file),
+                    "output_path": str(markdown_file),
+                }
+            )
+
+        assert len(result) == 1
+        assert "output_path must differ from the source file" in result[0].text
+        assert markdown_file.read_text(encoding="utf-8") == "# Existing\n"
 
     @pytest.mark.asyncio
     async def test_localhost_file_uri_conversion(self, tmp_path):
@@ -239,15 +295,20 @@ class TestDocumentConverterTool:
         pdf_file.write_bytes(b"%PDF-1.4 fake")
         localhost_uri = f"file://localhost{pdf_file.resolve().as_uri()[7:]}"
 
+        mock_result = MagicMock()
+        mock_result.markdown = "# Test\n"
+
         with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value="# Test\n",
-        ) as mock_convert:
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute({"uri": localhost_uri})
 
         assert len(result) == 1
         assert "Error" not in result[0].text
-        mock_convert.assert_called_once_with(str(pdf_file.resolve()))
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
 
     @pytest.mark.asyncio
     async def test_uppercase_file_uri_conversion(self, tmp_path):
@@ -256,15 +317,20 @@ class TestDocumentConverterTool:
         pdf_file.write_bytes(b"%PDF-1.4 fake")
         uppercase_uri = pdf_file.resolve().as_uri().replace("file://", "FILE://", 1)
 
+        mock_result = MagicMock()
+        mock_result.markdown = "# Test\n"
+
         with patch(
-            "jawafdehi_mcp.tools.document_converter.likhit.convert",
-            return_value="# Test\n",
-        ) as mock_convert:
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
             result = await self.tool.execute({"uri": uppercase_uri})
 
         assert len(result) == 1
         assert "Error" not in result[0].text
-        mock_convert.assert_called_once_with(str(pdf_file.resolve()))
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
 
     @pytest.mark.asyncio
     async def test_uppercase_https_uri_uses_markitdown(self):

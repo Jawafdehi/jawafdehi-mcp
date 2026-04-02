@@ -9,6 +9,11 @@ cd services/jawafdehi-mcp
 poetry install
 ```
 
+Document conversion is handled by MarkItDown. Nepal-specific PDF and legacy `.doc`
+support comes from the installed `markitdown-likhit` plugin dependency.
+By default, `convert_to_markdown` returns Markdown directly in the tool response.
+Provide `output_path` when you want the converted Markdown saved as a file.
+
 ### 2. Set Environment Variables
 
 ```bash

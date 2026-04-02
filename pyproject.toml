@@ -17,8 +17,8 @@ mcp = "^1.1.2"
 sqlalchemy = "^2.0.0"
 psycopg2-binary = "^2.9.0"
 nepali-datetime = "^1.0.8.4"
-likhit = "*"
 markitdown = {extras = ["docx", "pdf", "pptx", "xlsx"], version = "^0.1.5"}
+markitdown-likhit = {git = "https://github.com/Jawafdehi/likhit.git", rev = "main"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
