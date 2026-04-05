@@ -1,13 +1,18 @@
 """Tests for Jawafdehi MCP create/patch write tools."""
 
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from jawafdehi_mcp.server import TOOL_MAP
 from jawafdehi_mcp.tools.jawafdehi_cases import (
     CreateJawafdehiCaseTool,
+    CreateJawafEntityTool,
     PatchJawafdehiCaseTool,
+    UploadDocumentSourceTool,
 )
 
 
@@ -228,3 +233,216 @@ class TestPatchJawafdehiCaseTool:
         payload = json.loads(result[0].text)
         assert payload["status_code"] == 422
         assert "/state" in payload["details"]["detail"]
+
+
+class TestCreateJawafEntityTool:
+    def setup_method(self):
+        self.tool = CreateJawafEntityTool()
+
+    def test_tool_metadata(self):
+        assert self.tool.name == "create_jawaf_entity"
+        assert "JawafEntity" in self.tool.description
+        assert self.tool.input_schema["anyOf"] == [
+            {"required": ["nes_id"]},
+            {"required": ["display_name"]},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_requires_token(self, monkeypatch):
+        monkeypatch.delenv("JAWAFDEHI_API_TOKEN", raising=False)
+
+        result = await self.tool.execute({"display_name": "Nepal Rastra Bank"})
+
+        assert "JAWAFDEHI_API_TOKEN" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_create_success(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        response = MagicMock()
+        response.status_code = 201
+        response.json.return_value = {
+            "id": 11,
+            "nes_id": "entity:organization/ciaa",
+            "display_name": "CIAA",
+        }
+
+        context_manager, client = _mock_async_client(response)
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            result = await self.tool.execute(
+                {
+                    "nes_id": "entity:organization/ciaa",
+                    "display_name": "CIAA",
+                }
+            )
+
+        payload = json.loads(result[0].text)
+        assert payload["id"] == 11
+        client.post.assert_awaited_once()
+        _, kwargs = client.post.await_args
+        assert kwargs["headers"]["Authorization"] == "Token test-token"
+        assert kwargs["json"]["nes_id"] == "entity:organization/ciaa"
+
+    @pytest.mark.asyncio
+    async def test_create_error_passthrough(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        response = MagicMock()
+        response.status_code = 422
+        response.json.return_value = {
+            "nes_id": ["jawaf entity with this nes id already exists."]
+        }
+
+        context_manager, _ = _mock_async_client(response)
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            result = await self.tool.execute(
+                {"nes_id": "entity:person/sher-bahadur-deuba"}
+            )
+
+        payload = json.loads(result[0].text)
+        assert payload["status_code"] == 422
+        assert "already exists" in payload["details"]["nes_id"][0]
+
+
+class TestUploadDocumentSourceTool:
+    def setup_method(self):
+        self.tool = UploadDocumentSourceTool()
+
+    def test_tool_metadata(self):
+        assert self.tool.name == "upload_document_source"
+        assert "DocumentSource" in self.tool.description
+        assert self.tool.input_schema["required"] == ["title", "filename", "file_data"]
+
+    @pytest.mark.asyncio
+    async def test_requires_token(self, monkeypatch):
+        monkeypatch.delenv("JAWAFDEHI_API_TOKEN", raising=False)
+
+        result = await self.tool.execute(
+            {
+                "title": "Evidence",
+                "filename": "evidence.pdf",
+                "file_data": base64.b64encode(b"pdf-bytes").decode(),
+            }
+        )
+
+        assert "JAWAFDEHI_API_TOKEN" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_requires_fields(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        result = await self.tool.execute({"title": "Missing everything else"})
+
+        assert "Missing required arguments" in result[0].text
+        assert "filename" in result[0].text
+        assert "file_data" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_invalid_base64(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        result = await self.tool.execute(
+            {
+                "title": "Broken data",
+                "filename": "broken.pdf",
+                "file_data": "%%%not-base64%%%",
+            }
+        )
+
+        assert "Invalid base64 payload" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_upload_success(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        response = MagicMock()
+        response.status_code = 201
+        response.json.return_value = {
+            "id": 91,
+            "source_id": "source:20820405:abc123ef",
+            "title": "Audit Report",
+        }
+
+        context_manager, client = _mock_async_client(response)
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            result = await self.tool.execute(
+                {
+                    "title": "Audit Report",
+                    "description": "Budget variance report",
+                    "source_type": "OTHER_VISUAL",
+                    "filename": "audit.pdf",
+                    "file_data": base64.b64encode(b"pdf-content").decode(),
+                }
+            )
+
+        payload = json.loads(result[0].text)
+        assert payload["id"] == 91
+        client.post.assert_awaited_once()
+        _, kwargs = client.post.await_args
+        assert kwargs["headers"]["Authorization"] == "Token test-token"
+        assert kwargs["data"]["title"] == "Audit Report"
+        assert kwargs["data"]["description"] == "Budget variance report"
+        assert kwargs["data"]["source_type"] == "OTHER_VISUAL"
+        assert kwargs["files"]["uploaded_file"][0] == "audit.pdf"
+        assert kwargs["files"]["uploaded_file"][1] == b"pdf-content"
+
+    @pytest.mark.asyncio
+    async def test_upload_error_passthrough(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        response = MagicMock()
+        response.status_code = 413
+        response.json.return_value = {"detail": "File too large."}
+
+        context_manager, _ = _mock_async_client(response)
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            result = await self.tool.execute(
+                {
+                    "title": "Oversize",
+                    "filename": "big.pdf",
+                    "file_data": base64.b64encode(b"small-content").decode(),
+                }
+            )
+
+        payload = json.loads(result[0].text)
+        assert payload["status_code"] == 413
+        assert payload["details"]["detail"] == "File too large."
+
+    @pytest.mark.asyncio
+    async def test_upload_http_error(self, monkeypatch):
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            side_effect=httpx.HTTPError("network down"),
+        ):
+            result = await self.tool.execute(
+                {
+                    "title": "Network issue",
+                    "filename": "evidence.pdf",
+                    "file_data": base64.b64encode(b"file-content").decode(),
+                }
+            )
+
+        assert "Unexpected error uploading document" in result[0].text
+
+
+def test_new_tools_registered_in_server_tool_map():
+    assert "create_jawaf_entity" in TOOL_MAP
+    assert "upload_document_source" in TOOL_MAP

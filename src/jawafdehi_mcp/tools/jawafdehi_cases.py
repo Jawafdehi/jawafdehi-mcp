@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import urllib.parse
@@ -473,3 +474,157 @@ class SubmitNESChangeTool(BaseTool):
             return _error_text_content(f"Error submitting NES change: {str(e)}")
         except Exception as e:
             return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class CreateJawafEntityTool(BaseTool):
+    """Tool to create a JawafEntity via the API."""
+
+    @property
+    def name(self) -> str:
+        return "create_jawaf_entity"
+
+    @property
+    def description(self) -> str:
+        return "Create a new JawafEntity linking to an NES ID or via a display name."
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "nes_id": {
+                    "type": "string",
+                    "description": "Optional NES ID to link (e.g. 'entity:person/ram-sharma').",
+                },
+                "display_name": {
+                    "type": "string",
+                    "description": "Optional custom display name if not linking an NES ID.",
+                },
+            },
+            "anyOf": [
+                {"required": ["nes_id"]},
+                {"required": ["display_name"]},
+            ],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        token = _get_jawafdehi_api_token()
+        if not token:
+            return _error_text_content(
+                "JAWAFDEHI_API_TOKEN environment variable is not set."
+            )
+
+        base_url = _get_jawafdehi_base_url()
+        url = f"{base_url}/api/entities/"
+
+        headers = {
+            "Authorization": f"Token {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, headers=headers, json=arguments)
+
+            if response.status_code == 201:
+                return _json_text_content(response.json())
+
+            return _json_text_content(
+                _build_http_error_payload(response, "Error creating JawafEntity")
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error creating entity: {str(e)}")
+
+
+class UploadDocumentSourceTool(BaseTool):
+    """Tool to upload a document source."""
+
+    @property
+    def name(self) -> str:
+        return "upload_document_source"
+
+    @property
+    def description(self) -> str:
+        return "Create a new DocumentSource with an attached file."
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "source_type": {
+                    "type": "string",
+                    "description": (
+                        "Source category. Supported API enum values: "
+                        "LEGAL_COURT_ORDER, LEGAL_PROCEDURAL, OFFICIAL_GOVERNMENT, "
+                        "FINANCIAL_FORENSIC, INTERNAL_CORPORATE, MEDIA_NEWS, "
+                        "INVESTIGATIVE_REPORT, PUBLIC_COMPLAINT, LEGISLATIVE_DOC, "
+                        "SOCIAL_MEDIA, OTHER_VISUAL."
+                    ),
+                },
+                "filename": {"type": "string"},
+                "file_data": {
+                    "type": "string",
+                    "description": "Base64 encoded file content",
+                },
+            },
+            "required": ["title", "filename", "file_data"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        token = _get_jawafdehi_api_token()
+        if not token:
+            return _error_text_content(
+                "JAWAFDEHI_API_TOKEN environment variable is not set."
+            )
+
+        missing_keys = [
+            k for k in ["title", "filename", "file_data"] if k not in arguments
+        ]
+        if missing_keys:
+            return _error_text_content(
+                f"Missing required arguments: {', '.join(missing_keys)}"
+            )
+
+        try:
+            file_bytes = base64.b64decode(arguments["file_data"])
+        except Exception as e:
+            return _error_text_content(
+                f"Invalid base64 payload for file_data: {str(e)}"
+            )
+
+        base_url = _get_jawafdehi_base_url()
+        url = f"{base_url}/api/sources/"
+
+        headers = {
+            "Authorization": f"Token {token}",
+            "Accept": "application/json",
+        }
+
+        data = {
+            "title": arguments["title"],
+        }
+        if "description" in arguments:
+            data["description"] = arguments["description"]
+        if "source_type" in arguments:
+            data["source_type"] = arguments["source_type"]
+
+        files = {"uploaded_file": (arguments["filename"], file_bytes)}
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    url, headers=headers, data=data, files=files
+                )
+
+            if response.status_code == 201:
+                return _json_text_content(response.json())
+
+            return _json_text_content(
+                _build_http_error_payload(response, "Error uploading document source")
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error uploading document: {str(e)}")
