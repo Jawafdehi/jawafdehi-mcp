@@ -4,11 +4,13 @@ from .base import BaseTool
 from .date_converter import DateConverterTool
 from .document_converter import DocumentConverterTool
 from .jawafdehi_cases import (
+    CreateJawafEntityTool,
     CreateJawafdehiCaseTool,
     GetJawafdehiCaseTool,
     PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
     SubmitNESChangeTool,
+    UploadDocumentSourceTool,
 )
 from .nes import (
     GetNESEntitiesTool,
@@ -29,6 +31,8 @@ __all__ = [
     "CreateJawafdehiCaseTool",
     "PatchJawafdehiCaseTool",
     "SubmitNESChangeTool",
+    "CreateJawafEntityTool",
+    "UploadDocumentSourceTool",
     "SearchNESEntitiesTool",
     "GetNESEntitiesTool",
     "GetNESEntityPrefixesTool",

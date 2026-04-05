@@ -9,6 +9,7 @@ from mcp.types import TextContent, Tool
 from .tools import (
     BaseTool,
     CreateJawafdehiCaseTool,
+    CreateJawafEntityTool,
     DateConverterTool,
     DocumentConverterTool,
     GetJawafdehiCaseTool,
@@ -19,6 +20,7 @@ from .tools import (
     PatchJawafdehiCaseTool,
     SearchJawafdehiCasesTool,
     SubmitNESChangeTool,
+    UploadDocumentSourceTool,
 )
 from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
 
@@ -34,6 +36,8 @@ TOOLS: list[BaseTool] = [
     CreateJawafdehiCaseTool(),
     PatchJawafdehiCaseTool(),
     SubmitNESChangeTool(),
+    CreateJawafEntityTool(),
+    UploadDocumentSourceTool(),
     SearchNESEntitiesTool(),
     GetNESEntitiesTool(),
     GetNESEntityPrefixesTool(),
