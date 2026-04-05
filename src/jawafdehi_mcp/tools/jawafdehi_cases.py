@@ -506,25 +506,29 @@ class CreateJawafEntityTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         token = _get_jawafdehi_api_token()
         if not token:
-            return _error_text_content("JAWAFDEHI_API_TOKEN environment variable is not set.")
+            return _error_text_content(
+                "JAWAFDEHI_API_TOKEN environment variable is not set."
+            )
 
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/entities/"
-        
+
         headers = {
             "Authorization": f"Token {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        
+
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, headers=headers, json=arguments)
-            
+
             if response.status_code == 201:
                 return _json_text_content(response.json())
-                
-            return _json_text_content(_build_http_error_payload(response, "Error creating JawafEntity"))
+
+            return _json_text_content(
+                _build_http_error_payload(response, "Error creating JawafEntity")
+            )
         except Exception as e:
             return _error_text_content(f"Unexpected error creating entity: {str(e)}")
 
@@ -548,13 +552,13 @@ class UploadDocumentSourceTool(BaseTool):
                 "title": {"type": "string"},
                 "description": {"type": "string"},
                 "source_type": {
-                    "type": "string", 
-                    "description": "e.g. 'pdf', 'image', 'video', 'link', 'other'"
+                    "type": "string",
+                    "description": "e.g. 'pdf', 'image', 'video', 'link', 'other'",
                 },
                 "filename": {"type": "string"},
                 "file_data": {
                     "type": "string",
-                    "description": "Base64 encoded file content"
+                    "description": "Base64 encoded file content",
                 },
             },
             "required": ["title", "filename", "file_data"],
@@ -563,21 +567,25 @@ class UploadDocumentSourceTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         token = _get_jawafdehi_api_token()
         if not token:
-            return _error_text_content("JAWAFDEHI_API_TOKEN environment variable is not set.")
+            return _error_text_content(
+                "JAWAFDEHI_API_TOKEN environment variable is not set."
+            )
 
         try:
             file_bytes = base64.b64decode(arguments["file_data"])
         except Exception as e:
-            return _error_text_content(f"Invalid base64 payload for file_data: {str(e)}")
-            
+            return _error_text_content(
+                f"Invalid base64 payload for file_data: {str(e)}"
+            )
+
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/sources/"
-        
+
         headers = {
             "Authorization": f"Token {token}",
             "Accept": "application/json",
         }
-        
+
         data = {
             "title": arguments["title"],
         }
@@ -585,18 +593,20 @@ class UploadDocumentSourceTool(BaseTool):
             data["description"] = arguments["description"]
         if "source_type" in arguments:
             data["source_type"] = arguments["source_type"]
-            
-        files = {
-            "uploaded_file": (arguments["filename"], file_bytes)
-        }
-        
+
+        files = {"uploaded_file": (arguments["filename"], file_bytes)}
+
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(url, headers=headers, data=data, files=files)
-            
+                response = await client.post(
+                    url, headers=headers, data=data, files=files
+                )
+
             if response.status_code == 201:
                 return _json_text_content(response.json())
-                
-            return _json_text_content(_build_http_error_payload(response, "Error uploading document source"))
+
+            return _json_text_content(
+                _build_http_error_payload(response, "Error uploading document source")
+            )
         except Exception as e:
             return _error_text_content(f"Unexpected error uploading document: {str(e)}")
