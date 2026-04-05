@@ -501,6 +501,10 @@ class CreateJawafEntityTool(BaseTool):
                     "description": "Optional custom display name if not linking an NES ID.",
                 },
             },
+            "anyOf": [
+                {"required": ["nes_id"]},
+                {"required": ["display_name"]},
+            ],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -569,6 +573,14 @@ class UploadDocumentSourceTool(BaseTool):
         if not token:
             return _error_text_content(
                 "JAWAFDEHI_API_TOKEN environment variable is not set."
+            )
+
+        missing_keys = [
+            k for k in ["title", "filename", "file_data"] if k not in arguments
+        ]
+        if missing_keys:
+            return _error_text_content(
+                f"Missing required arguments: {', '.join(missing_keys)}"
             )
 
         try:
