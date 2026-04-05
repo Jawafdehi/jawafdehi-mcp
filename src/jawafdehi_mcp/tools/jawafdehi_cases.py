@@ -557,7 +557,13 @@ class UploadDocumentSourceTool(BaseTool):
                 "description": {"type": "string"},
                 "source_type": {
                     "type": "string",
-                    "description": "e.g. 'pdf', 'image', 'video', 'link', 'other'",
+                    "description": (
+                        "Source category. Supported API enum values: "
+                        "LEGAL_COURT_ORDER, LEGAL_PROCEDURAL, OFFICIAL_GOVERNMENT, "
+                        "FINANCIAL_FORENSIC, INTERNAL_CORPORATE, MEDIA_NEWS, "
+                        "INVESTIGATIVE_REPORT, PUBLIC_COMPLAINT, LEGISLATIVE_DOC, "
+                        "SOCIAL_MEDIA, OTHER_VISUAL."
+                    ),
                 },
                 "filename": {"type": "string"},
                 "file_data": {
