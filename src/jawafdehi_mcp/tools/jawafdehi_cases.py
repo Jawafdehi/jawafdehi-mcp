@@ -21,6 +21,14 @@ def _get_jawafdehi_api_token() -> str | None:
     return token or None
 
 
+def _get_auth_headers() -> dict[str, str]:
+    """Return Authorization header dict if a token is configured, else empty dict."""
+    token = _get_jawafdehi_api_token()
+    if token:
+        return {"Authorization": f"Token {token}"}
+    return {}
+
+
 def _json_text_content(payload: Any) -> list[TextContent]:
     return [
         TextContent(type="text", text=json.dumps(payload, indent=2, ensure_ascii=False))
@@ -100,7 +108,9 @@ class SearchJawafdehiCasesTool(BaseTool):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
+                response = await client.get(
+                    url, headers=_get_auth_headers(), timeout=30.0
+                )
                 response.raise_for_status()
                 data = response.json()
 
@@ -159,8 +169,11 @@ class GetJawafdehiCaseTool(BaseTool):
         case_url = f"{base_url.rstrip('/')}/api/cases/{case_id}/"
 
         try:
+            auth_headers = _get_auth_headers()
             async with httpx.AsyncClient() as client:
-                response = await client.get(case_url, timeout=30.0)
+                response = await client.get(
+                    case_url, headers=auth_headers, timeout=30.0
+                )
                 if response.status_code == 404:
                     return _error_text_content(f"Case {case_id} not found.")
                 response.raise_for_status()
@@ -181,7 +194,9 @@ class GetJawafdehiCaseTool(BaseTool):
                     for src_id in source_ids_to_fetch:
                         try:
                             src_url = f"{base_url.rstrip('/')}/api/sources/{src_id}/"
-                            src_response = await client.get(src_url, timeout=30.0)
+                            src_response = await client.get(
+                                src_url, headers=auth_headers, timeout=30.0
+                            )
                             if src_response.status_code == 200:
                                 resolved_sources.append(src_response.json())
                         except Exception as e:
@@ -628,3 +643,120 @@ class UploadDocumentSourceTool(BaseTool):
             )
         except Exception as e:
             return _error_text_content(f"Unexpected error uploading document: {str(e)}")
+
+
+class SearchJawafEntitiesTool(BaseTool):
+    """Tool for searching Jawafdehi entities."""
+
+    @property
+    def name(self) -> str:
+        return "search_jawaf_entities"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for Jawafdehi entities (persons, organizations) by name or NES ID. "
+            "Returns entities associated with published cases."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "string",
+                    "description": (
+                        "Search query matched against display_name and nes_id."
+                    ),
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Page number for pagination (defaults to 1).",
+                    "default": 1,
+                },
+            },
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        query_params: dict[str, str] = {}
+
+        if arguments.get("search"):
+            query_params["search"] = arguments["search"]
+
+        if "page" in arguments:
+            query_params["page"] = str(arguments["page"])
+
+        base_url = _get_jawafdehi_base_url()
+        query_string = urllib.parse.urlencode(query_params)
+        url = (
+            f"{base_url}/api/entities/?{query_string}"
+            if query_string
+            else f"{base_url}/api/entities/"
+        )
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url, headers=_get_auth_headers(), timeout=30.0
+                )
+                response.raise_for_status()
+                return _json_text_content(response.json())
+        except httpx.HTTPError as e:
+            return _error_text_content(
+                f"Error accessing Jawafdehi entities API: {str(e)}"
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class GetJawafEntityTool(BaseTool):
+    """Tool for retrieving a single Jawafdehi entity by ID."""
+
+    @property
+    def name(self) -> str:
+        return "get_jawaf_entity"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Retrieve a specific Jawafdehi entity by its integer ID, including "
+            "its NES ID, display name, and related published cases."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "integer",
+                    "description": "The integer ID of the Jawafdehi entity.",
+                },
+            },
+            "required": ["entity_id"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        entity_id = arguments.get("entity_id")
+        if not entity_id:
+            return _error_text_content("Error: entity_id is required")
+
+        base_url = _get_jawafdehi_base_url()
+        url = f"{base_url}/api/entities/{entity_id}/"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url, headers=_get_auth_headers(), timeout=30.0
+                )
+                if response.status_code == 404:
+                    return _error_text_content(f"Entity {entity_id} not found.")
+                response.raise_for_status()
+                return _json_text_content(response.json())
+        except httpx.HTTPError as e:
+            return _error_text_content(
+                f"Error accessing Jawafdehi entities API for entity {entity_id}: {str(e)}"
+            )
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
