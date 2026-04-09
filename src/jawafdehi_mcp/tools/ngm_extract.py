@@ -129,25 +129,13 @@ Court IDs (court_identifier):
             ("Verdict Judge", "verdict_judge"),
         ]
 
+        def default_serializer(obj):
+            return str(obj)
+
         for label, key in props:
             val = case_info.get(key)
             if val is not None and val != "":
                 md.append(f"| **{label}** | {val} |")
-
-        # Full JSON details for Case (including extra_data)
-        md.append("\n### Full Case Record Details (JSON)")
-        md.append("```json")
-
-        # Serialize datetime/date objects if needed by using string conversion
-        def default_serializer(obj):
-            return str(obj)
-
-        md.append(
-            json.dumps(
-                case_info, indent=2, ensure_ascii=False, default=default_serializer
-            )
-        )
-        md.append("```")
 
         # Entities
         if entities:
@@ -213,11 +201,44 @@ Court IDs (court_identifier):
                 if h.get("remarks"):
                     md.append(f"\n> **Remarks:** {h.get('remarks')}")
 
-                md.append("\n#### Hearing Full Details (JSON)")
+        # Appendix: raw data for integrity
+        md.append("\n---")
+        md.append("\n## Appendix: Raw Data")
+        md.append(
+            "*This section contains unformatted raw database records for reference and data integrity.*"
+        )
+
+        if case_info:
+            md.append("\n### Full Case Record")
+            md.append("```json")
+            md.append(
+                json.dumps(
+                    case_info,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=default_serializer,
+                )
+            )
+            md.append("```")
+
+        if hearings:
+            md.append("\n### Hearing Records")
+            sorted_hearings = sorted(
+                hearings, key=lambda x: str(x.get("hearing_date_ad", ""))
+            )
+            for i, h in enumerate(sorted_hearings, start=1):
+                date_ad = h.get("hearing_date_ad")
+                date_bs = h.get("hearing_date_bs", "Unknown Date")
+                date_str = f"{date_bs} ({date_ad})" if date_ad else f"{date_bs}"
+                decision = h.get("decision_type", "Hearing")
+                md.append(f"\n#### Hearing {i}: {date_str} \u2014 {decision}")
                 md.append("```json")
                 md.append(
                     json.dumps(
-                        h, indent=2, ensure_ascii=False, default=default_serializer
+                        h,
+                        indent=2,
+                        ensure_ascii=False,
+                        default=default_serializer,
                     )
                 )
                 md.append("```")

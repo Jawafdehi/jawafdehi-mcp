@@ -33,7 +33,7 @@ Model Context Protocol (MCP) server providing tools for integrating LLM workflow
 
 ### Likhit and Document Conversion
 
-- `convert_to_markdown`: Convert documents through MarkItDown with plugins enabled by default; the `likhit` plugin adds Nepal-specific handling for supported PDFs and legacy `.doc` files. Markdown is returned directly by default, or written to a file when `output_path` is provided
+- `convert_to_markdown`: Convert documents through MarkItDown with plugins enabled by default; the `likhit` plugin adds Nepal-specific handling for supported PDFs and legacy `.doc` files. **Legacy `.doc` files require `antiword` installed on the host** (see [System Requirements](#system-requirements)). Markdown is returned directly by default, or written to a file when `output_path` is provided
 - `convert_date`: Convert dates between AD and BS calendars
 
 ## Architecture
@@ -62,6 +62,22 @@ src/jawafdehi_mcp/
 4. Add an instance to the `TOOLS` list in `server.py`
 
 See `tools/example_tool.py` for a template.
+
+## System Requirements
+
+Most functionality requires only the Python dependencies managed by `uv`/`poetry`.
+
+**Legacy `.doc` file conversion** (when `convert_to_markdown` is called on a `.doc` file) additionally requires `antiword` installed on the host:
+
+```bash
+# Ubuntu / Debian
+sudo apt install antiword
+
+# macOS
+brew install antiword
+```
+
+Without a system `antiword` binary, the bundled binary inside `pyantiword` (MarkItDown's `.doc` converter) may fail with an `Exec format error` if it was compiled for a different CPU architecture. `.docx`, `.pdf`, and all other formats are unaffected.
 
 ## Installation
 

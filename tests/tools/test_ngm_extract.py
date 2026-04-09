@@ -69,6 +69,39 @@ class TestNGMExtractCaseDataTool:
         assert "2023-01-01" in md
         assert "Judge A" in md
 
+        # JSON should only appear in the Appendix, not inline among the main sections
+        appendix_idx = md.index("## Appendix: Raw Data")
+        first_json_block = md.index("```json")
+        assert (
+            first_json_block > appendix_idx
+        ), "JSON blocks must only appear after the Appendix heading"
+
+        # No 'Full Case Record Details' or 'Hearing Full Details' headings should exist
+        assert "Full Case Record Details" not in md
+        assert "Hearing Full Details" not in md
+
+    def test_format_markdown_appendix_structure(self):
+        """Appendix with JSON blobs is present when data exists, absent when not."""
+        court_info = {"full_name_english": "Test Court", "full_name_nepali": ""}
+        case_info = {"case_number": "001", "case_type": "Civil"}
+        hearing = {
+            "hearing_date_ad": "2024-03-15",
+            "hearing_date_bs": "2080-12-02",
+            "decision_type": "Order",
+            "judge_names": "Judge B",
+        }
+
+        # With data: Appendix present with both case and hearing JSON
+        md_with_data = self.tool._format_markdown(court_info, case_info, [hearing], [])
+        assert "## Appendix: Raw Data" in md_with_data
+        assert "### Full Case Record" in md_with_data
+        assert "### Hearing Records" in md_with_data
+        assert "#### Hearing 1:" in md_with_data
+
+        # Without data (empty case_info triggers early return): no Appendix
+        md_no_data = self.tool._format_markdown({}, {}, [], [])
+        assert "## Appendix: Raw Data" not in md_no_data
+
     @patch("os.makedirs")
     @patch("builtins.open", new_callable=mock_open)
     @patch(
