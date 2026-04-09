@@ -1,6 +1,5 @@
 """Tests for Jawafdehi MCP create/patch write tools."""
 
-import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -319,7 +318,7 @@ class TestUploadDocumentSourceTool:
     def test_tool_metadata(self):
         assert self.tool.name == "upload_document_source"
         assert "DocumentSource" in self.tool.description
-        assert self.tool.input_schema["required"] == ["title", "filename", "file_data"]
+        assert self.tool.input_schema["required"] == ["title", "file_path"]
 
     @pytest.mark.asyncio
     async def test_requires_token(self, monkeypatch):
@@ -328,8 +327,7 @@ class TestUploadDocumentSourceTool:
         result = await self.tool.execute(
             {
                 "title": "Evidence",
-                "filename": "evidence.pdf",
-                "file_data": base64.b64encode(b"pdf-bytes").decode(),
+                "file_path": "/tmp/evidence.pdf",
             }
         )
 
@@ -339,29 +337,30 @@ class TestUploadDocumentSourceTool:
     async def test_requires_fields(self, monkeypatch):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
 
-        result = await self.tool.execute({"title": "Missing everything else"})
+        result = await self.tool.execute({"title": "Missing file_path"})
 
         assert "Missing required arguments" in result[0].text
-        assert "filename" in result[0].text
-        assert "file_data" in result[0].text
+        assert "file_path" in result[0].text
 
     @pytest.mark.asyncio
-    async def test_invalid_base64(self, monkeypatch):
+    async def test_invalid_file_path(self, monkeypatch, tmp_path):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
 
         result = await self.tool.execute(
             {
-                "title": "Broken data",
-                "filename": "broken.pdf",
-                "file_data": "%%%not-base64%%%",
+                "title": "Bad path",
+                "file_path": "/nonexistent/path/broken.pdf",
             }
         )
 
-        assert "Invalid base64 payload" in result[0].text
+        assert "Could not read file" in result[0].text
 
     @pytest.mark.asyncio
-    async def test_upload_success(self, monkeypatch):
+    async def test_upload_success(self, monkeypatch, tmp_path):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        pdf_file = tmp_path / "audit.pdf"
+        pdf_file.write_bytes(b"pdf-content")
 
         response = MagicMock()
         response.status_code = 201
@@ -382,8 +381,7 @@ class TestUploadDocumentSourceTool:
                     "title": "Audit Report",
                     "description": "Budget variance report",
                     "source_type": "OTHER_VISUAL",
-                    "filename": "audit.pdf",
-                    "file_data": base64.b64encode(b"pdf-content").decode(),
+                    "file_path": str(pdf_file),
                 }
             )
 
@@ -399,8 +397,11 @@ class TestUploadDocumentSourceTool:
         assert kwargs["files"]["uploaded_file"][1] == b"pdf-content"
 
     @pytest.mark.asyncio
-    async def test_upload_error_passthrough(self, monkeypatch):
+    async def test_upload_error_passthrough(self, monkeypatch, tmp_path):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        pdf_file = tmp_path / "big.pdf"
+        pdf_file.write_bytes(b"small-content")
 
         response = MagicMock()
         response.status_code = 413
@@ -415,8 +416,7 @@ class TestUploadDocumentSourceTool:
             result = await self.tool.execute(
                 {
                     "title": "Oversize",
-                    "filename": "big.pdf",
-                    "file_data": base64.b64encode(b"small-content").decode(),
+                    "file_path": str(pdf_file),
                 }
             )
 
@@ -425,8 +425,11 @@ class TestUploadDocumentSourceTool:
         assert payload["details"]["detail"] == "File too large."
 
     @pytest.mark.asyncio
-    async def test_upload_http_error(self, monkeypatch):
+    async def test_upload_http_error(self, monkeypatch, tmp_path):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        pdf_file = tmp_path / "evidence.pdf"
+        pdf_file.write_bytes(b"file-content")
 
         with patch(
             "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
@@ -435,8 +438,7 @@ class TestUploadDocumentSourceTool:
             result = await self.tool.execute(
                 {
                     "title": "Network issue",
-                    "filename": "evidence.pdf",
-                    "file_data": base64.b64encode(b"file-content").decode(),
+                    "file_path": str(pdf_file),
                 }
             )
 

@@ -1,7 +1,7 @@
-import base64
 import json
 import os
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -561,7 +561,7 @@ class UploadDocumentSourceTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Create a new DocumentSource with an attached file."
+        return "Create a new DocumentSource by uploading a file from disk."
 
     @property
     def input_schema(self) -> dict[str, Any]:
@@ -580,13 +580,12 @@ class UploadDocumentSourceTool(BaseTool):
                         "SOCIAL_MEDIA, OTHER_VISUAL."
                     ),
                 },
-                "filename": {"type": "string"},
-                "file_data": {
+                "file_path": {
                     "type": "string",
-                    "description": "Base64 encoded file content",
+                    "description": "Absolute path to the file on disk to upload.",
                 },
             },
-            "required": ["title", "filename", "file_data"],
+            "required": ["title", "file_path"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -596,21 +595,19 @@ class UploadDocumentSourceTool(BaseTool):
                 "JAWAFDEHI_API_TOKEN environment variable is not set."
             )
 
-        missing_keys = [
-            k for k in ["title", "filename", "file_data"] if k not in arguments
-        ]
+        missing_keys = [k for k in ["title", "file_path"] if k not in arguments]
         if missing_keys:
             return _error_text_content(
                 f"Missing required arguments: {', '.join(missing_keys)}"
             )
 
+        file_path = Path(arguments["file_path"])
         try:
-            file_bytes = base64.b64decode(arguments["file_data"])
-        except Exception as e:
-            return _error_text_content(
-                f"Invalid base64 payload for file_data: {str(e)}"
-            )
+            file_bytes = file_path.read_bytes()
+        except OSError as e:
+            return _error_text_content(f"Could not read file '{file_path}': {e}")
 
+        filename = file_path.name
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/sources/"
 
@@ -627,7 +624,7 @@ class UploadDocumentSourceTool(BaseTool):
         if "source_type" in arguments:
             data["source_type"] = arguments["source_type"]
 
-        files = {"uploaded_file": (arguments["filename"], file_bytes)}
+        files = {"uploaded_file": (filename, file_bytes)}
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
