@@ -569,7 +569,10 @@ class UploadDocumentSourceTool(BaseTool):
             "type": "object",
             "properties": {
                 "title": {"type": "string"},
-                "description": {"type": "string"},
+                "description": {
+                    "type": "string",
+                    "description": "Source description: what the underlying content *is* (describe the document itself).",
+                },
                 "source_type": {
                     "type": "string",
                     "description": (
@@ -578,6 +581,22 @@ class UploadDocumentSourceTool(BaseTool):
                         "FINANCIAL_FORENSIC, INTERNAL_CORPORATE, MEDIA_NEWS, "
                         "INVESTIGATIVE_REPORT, PUBLIC_COMPLAINT, LEGISLATIVE_DOC, "
                         "SOCIAL_MEDIA, OTHER_VISUAL."
+                    ),
+                },
+                "url": {
+                    "type": "array",
+                    "items": {"type": "string", "format": "uri"},
+                    "description": (
+                        "List of external URLs for this source. "
+                        "For news articles, include the original article URL here."
+                    ),
+                },
+                "publication_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": (
+                        "Publication date (YYYY-MM-DD). "
+                        "Required for MEDIA_NEWS sources."
                     ),
                 },
                 "file_path": {
@@ -623,6 +642,14 @@ class UploadDocumentSourceTool(BaseTool):
             data["description"] = arguments["description"]
         if "source_type" in arguments:
             data["source_type"] = arguments["source_type"]
+        if "publication_date" in arguments:
+            data["publication_date"] = arguments["publication_date"]
+
+        # url is a JSON list; multipart/form-data requires encoding it as JSON
+        import json as _json
+
+        if "url" in arguments and arguments["url"]:
+            data["url"] = _json.dumps(arguments["url"])
 
         files = {"uploaded_file": (filename, file_bytes)}
 
