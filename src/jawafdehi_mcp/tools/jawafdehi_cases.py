@@ -516,10 +516,7 @@ class CreateJawafEntityTool(BaseTool):
                     "description": "Optional custom display name if not linking an NES ID.",
                 },
             },
-            "anyOf": [
-                {"required": ["nes_id"]},
-                {"required": ["display_name"]},
-            ],
+            "required": ["display_name"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:

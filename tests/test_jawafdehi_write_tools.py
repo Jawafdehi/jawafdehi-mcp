@@ -241,10 +241,11 @@ class TestCreateJawafEntityTool:
     def test_tool_metadata(self):
         assert self.tool.name == "create_jawaf_entity"
         assert "JawafEntity" in self.tool.description
-        assert self.tool.input_schema["anyOf"] == [
-            {"required": ["nes_id"]},
-            {"required": ["display_name"]},
-        ]
+        schema = self.tool.input_schema
+        assert schema["type"] == "object"
+        assert "nes_id" in schema["properties"]
+        assert "display_name" in schema["properties"]
+        assert schema["required"] == ["display_name"]
 
     @pytest.mark.asyncio
     async def test_requires_token(self, monkeypatch):

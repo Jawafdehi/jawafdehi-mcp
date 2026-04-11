@@ -34,7 +34,11 @@ class TestGetNESEntityPrefixesTool:
         assert self.tool.name == "get_nes_entity_prefixes"
 
     def test_input_schema_is_empty_object(self):
-        assert self.tool.input_schema == {"type": "object", "properties": {}}
+        assert self.tool.input_schema == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
 
     def test_tool_registered_with_server(self):
         assert "get_nes_entity_prefixes" in TOOL_MAP

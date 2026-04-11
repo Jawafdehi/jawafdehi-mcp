@@ -217,6 +217,7 @@ class GetNESTagsTool(BaseTool):
         return {
             "type": "object",
             "properties": {},
+            "required": [],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -257,6 +258,7 @@ class GetNESEntityPrefixesTool(BaseTool):
         return {
             "type": "object",
             "properties": {},
+            "required": [],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
