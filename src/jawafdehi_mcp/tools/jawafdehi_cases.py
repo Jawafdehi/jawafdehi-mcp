@@ -52,6 +52,301 @@ def _build_http_error_payload(response: httpx.Response, prefix: str) -> dict[str
     }
 
 
+def _safe_public_urls(value: Any) -> list[str]:
+    urls = value if isinstance(value, list) else [value] if value else []
+    safe_urls = []
+    for url in urls:
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            continue
+        parsed = urllib.parse.urlparse(url)
+        if "jawafdehi/sources/" in parsed.path or "/media/" in parsed.path:
+            continue
+        if url not in safe_urls:
+            safe_urls.append(url)
+    return safe_urls
+
+
+def _sanitize_public_source(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": source.get("id"),
+        "source_id": source.get("source_id"),
+        "title": source.get("title") or "",
+        "description": source.get("description") or "",
+        "source_type": source.get("source_type"),
+        "url": _safe_public_urls(source.get("url")),
+        "publication_date": source.get("publication_date"),
+    }
+
+
+def _sanitize_public_case(
+    case_data: dict[str, Any], include_evidence: bool = False
+) -> dict[str, Any]:
+    sanitized = {
+        "id": case_data.get("id"),
+        "case_id": case_data.get("case_id"),
+        "slug": case_data.get("slug"),
+        "case_type": case_data.get("case_type"),
+        "state": case_data.get("state"),
+        "title": case_data.get("title") or "",
+        "short_description": case_data.get("short_description") or "",
+        "description": case_data.get("description") or "",
+        "key_allegations": case_data.get("key_allegations") or [],
+        "tags": case_data.get("tags") or [],
+        "entities": [
+            {
+                "id": entity.get("id"),
+                "nes_id": entity.get("nes_id"),
+                "display_name": entity.get("display_name"),
+                "type": entity.get("type"),
+            }
+            for entity in case_data.get("entities") or []
+            if isinstance(entity, dict)
+        ],
+        "case_start_date": case_data.get("case_start_date"),
+        "case_end_date": case_data.get("case_end_date"),
+        "created_at": case_data.get("created_at"),
+        "updated_at": case_data.get("updated_at"),
+    }
+
+    if include_evidence:
+        evidence = []
+        for item in case_data.get("evidence") or []:
+            if not isinstance(item, dict):
+                continue
+            entry = {
+                "source_id": item.get("source_id"),
+                "description": item.get("description") or "",
+            }
+            if isinstance(item.get("source"), dict):
+                entry["source"] = _sanitize_public_source(item["source"])
+            evidence.append(entry)
+        sanitized["evidence"] = evidence
+
+    return sanitized
+
+
+def _sanitize_public_entity(entity: dict[str, Any]) -> dict[str, Any]:
+    related_cases = []
+    for related in entity.get("related_cases") or []:
+        if not isinstance(related, dict):
+            continue
+        if related.get("state") not in (None, "PUBLISHED"):
+            continue
+        related_cases.append(
+            {
+                "case_id": related.get("case_id"),
+                "relation_type": related.get("relation_type"),
+            }
+        )
+
+    return {
+        "id": entity.get("id"),
+        "nes_id": entity.get("nes_id"),
+        "display_name": entity.get("display_name"),
+        "related_cases": related_cases,
+    }
+
+
+class PublicSearchPublishedCasesTool(BaseTool):
+    """Public-safe tool for searching only published Jawafdehi cases."""
+
+    @property
+    def name(self) -> str:
+        return "public_search_published_cases"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search published public Jawafdehi corruption cases. This tool strips "
+            "internal fields and never uses authenticated API access."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "string",
+                    "description": "Search across title, description, and allegations.",
+                },
+                "tags": {
+                    "type": "string",
+                    "description": "Filter cases containing a specific tag.",
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Page number for pagination.",
+                    "default": 1,
+                },
+            },
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        query_params = {"case_type": "CORRUPTION"}
+        if arguments.get("search"):
+            query_params["search"] = arguments["search"]
+        if arguments.get("tags"):
+            query_params["tags"] = arguments["tags"]
+        if arguments.get("page"):
+            query_params["page"] = str(arguments["page"])
+
+        url = f"{_get_jawafdehi_base_url()}/api/cases/?{urllib.parse.urlencode(query_params)}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers={}, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                raw_results = [
+                    case for case in data.get("results", []) if isinstance(case, dict)
+                ]
+                results = [
+                    _sanitize_public_case(case)
+                    for case in raw_results
+                    if case.get("state") == "PUBLISHED"
+                ]
+                count = data.get("count", len(results))
+                if len(raw_results) != len(results):
+                    count = len(results)
+                return _json_text_content(
+                    {
+                        "count": count,
+                        "next": data.get("next"),
+                        "previous": data.get("previous"),
+                        "results": results,
+                    }
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(f"Error accessing public cases API: {str(e)}")
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class PublicGetPublishedCaseTool(BaseTool):
+    """Public-safe tool for retrieving a single published Jawafdehi case."""
+
+    @property
+    def name(self) -> str:
+        return "public_get_published_case"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Retrieve one published Jawafdehi case with internal fields stripped. "
+            "Rejects draft, in-review, and closed cases."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "case_id": {
+                    "type": ["integer", "string"],
+                    "description": "Numeric case id or slug.",
+                },
+                "fetch_sources": {
+                    "type": "boolean",
+                    "description": "Include sanitized evidence source metadata.",
+                    "default": False,
+                },
+            },
+            "required": ["case_id"],
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        case_id = arguments.get("case_id")
+        if not case_id:
+            return _error_text_content("Error: case_id is required")
+
+        url = f"{_get_jawafdehi_base_url()}/api/cases/{case_id}/"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers={}, timeout=30.0)
+                if response.status_code == 404:
+                    return _error_text_content(f"Case {case_id} not found.")
+                response.raise_for_status()
+                data = response.json()
+                if data.get("state") != "PUBLISHED":
+                    return _error_text_content(f"Case {case_id} is not published.")
+                return _json_text_content(
+                    _sanitize_public_case(
+                        data,
+                        include_evidence=bool(arguments.get("fetch_sources", False)),
+                    )
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(f"Error accessing public case API: {str(e)}")
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
+class PublicSearchJawafEntitiesTool(BaseTool):
+    """Public-safe tool for searching Jawafdehi entities tied to published cases."""
+
+    @property
+    def name(self) -> str:
+        return "public_search_jawaf_entities"
+
+    @property
+    def description(self) -> str:
+        return "Search public Jawafdehi entities associated with published cases."
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "string",
+                    "description": "Search query matched against display_name and nes_id.",
+                },
+                "page": {
+                    "type": "integer",
+                    "description": "Page number for pagination.",
+                    "default": 1,
+                },
+            },
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        query_params: dict[str, str] = {}
+        if arguments.get("search"):
+            query_params["search"] = arguments["search"]
+        if arguments.get("page"):
+            query_params["page"] = str(arguments["page"])
+
+        query_string = urllib.parse.urlencode(query_params)
+        url = (
+            f"{_get_jawafdehi_base_url()}/api/entities/?{query_string}"
+            if query_string
+            else f"{_get_jawafdehi_base_url()}/api/entities/"
+        )
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers={}, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                return _json_text_content(
+                    {
+                        "count": data.get("count", 0),
+                        "next": data.get("next"),
+                        "previous": data.get("previous"),
+                        "results": [
+                            _sanitize_public_entity(entity)
+                            for entity in data.get("results", [])
+                            if isinstance(entity, dict)
+                        ],
+                    }
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(f"Error accessing public entities API: {str(e)}")
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
 class SearchJawafdehiCasesTool(BaseTool):
     """Tool for searching Jawafdehi accountability cases."""
 
