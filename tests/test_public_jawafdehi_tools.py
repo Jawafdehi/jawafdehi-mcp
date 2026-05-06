@@ -253,7 +253,7 @@ async def test_public_entity_search_filters_non_published_related_cases(monkeypa
         return _response(
             url,
             json_payload={
-                "count": 1,
+                "count": 3,
                 "results": [
                     {
                         "id": 1,
@@ -264,7 +264,19 @@ async def test_public_entity_search_filters_non_published_related_cases(monkeypa
                             {"case_id": "case-1", "state": "PUBLISHED"},
                             {"case_id": "case-2", "state": "IN_REVIEW"},
                         ],
-                    }
+                    },
+                    {
+                        "id": 2,
+                        "nes_id": "entity:person/missing-state",
+                        "display_name": "Missing State Person",
+                        "related_cases": [{"case_id": "case-3"}],
+                    },
+                    {
+                        "id": 3,
+                        "nes_id": "entity:person/private-only",
+                        "display_name": "Private Only Person",
+                        "related_cases": [{"case_id": "case-4", "state": "DRAFT"}],
+                    },
                 ],
             },
         )
@@ -281,3 +293,7 @@ async def test_public_entity_search_filters_non_published_related_cases(monkeypa
         {"case_id": "case-1", "relation_type": None}
     ]
     assert "notes" not in parsed["results"][0]
+    assert parsed["count"] == 1
+    assert [entity["nes_id"] for entity in parsed["results"]] == [
+        "entity:person/example"
+    ]

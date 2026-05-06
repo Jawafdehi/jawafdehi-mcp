@@ -125,12 +125,12 @@ def _sanitize_public_case(
     return sanitized
 
 
-def _sanitize_public_entity(entity: dict[str, Any]) -> dict[str, Any]:
+def _sanitize_public_entity(entity: dict[str, Any]) -> dict[str, Any] | None:
     related_cases = []
     for related in entity.get("related_cases") or []:
         if not isinstance(related, dict):
             continue
-        if related.get("state") not in (None, "PUBLISHED"):
+        if related.get("state") != "PUBLISHED":
             continue
         related_cases.append(
             {
@@ -138,6 +138,9 @@ def _sanitize_public_entity(entity: dict[str, Any]) -> dict[str, Any]:
                 "relation_type": related.get("relation_type"),
             }
         )
+
+    if not related_cases:
+        return None
 
     return {
         "id": entity.get("id"),
@@ -418,16 +421,21 @@ class PublicSearchJawafEntitiesTool(BaseTool):
                 response = await client.get(url, headers={}, timeout=30.0)
                 response.raise_for_status()
                 data = response.json()
+                results = [
+                    sanitized
+                    for sanitized in (
+                        _sanitize_public_entity(entity)
+                        for entity in data.get("results", [])
+                        if isinstance(entity, dict)
+                    )
+                    if sanitized is not None
+                ]
                 return _json_text_content(
                     {
-                        "count": data.get("count", 0),
+                        "count": len(results),
                         "next": data.get("next"),
                         "previous": data.get("previous"),
-                        "results": [
-                            _sanitize_public_entity(entity)
-                            for entity in data.get("results", [])
-                            if isinstance(entity, dict)
-                        ],
+                        "results": results,
                     }
                 )
         except httpx.HTTPError as e:
