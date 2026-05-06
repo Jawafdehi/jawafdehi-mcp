@@ -223,6 +223,81 @@ class PublicSearchPublishedCasesTool(BaseTool):
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
+class PublicCountPublishedCasesTool(BaseTool):
+    """Public-safe typed count for published Jawafdehi cases."""
+
+    @property
+    def name(self) -> str:
+        return "public_count_published_cases"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Count published public Jawafdehi corruption cases. Returns an explicit "
+            "published-only count contract for public chat."
+        )
+
+    @property
+    def input_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "string",
+                    "description": "Search across title, description, and allegations.",
+                },
+                "tags": {
+                    "type": "string",
+                    "description": "Filter cases containing a specific tag.",
+                },
+            },
+        }
+
+    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
+        query_params = {"page": "1"}
+        filters: dict[str, str] = {}
+        if arguments.get("search"):
+            query_params["search"] = arguments["search"]
+            filters["search"] = arguments["search"]
+        if arguments.get("tags"):
+            query_params["tags"] = arguments["tags"]
+            filters["tags"] = arguments["tags"]
+
+        url = f"{_get_jawafdehi_base_url()}/api/cases/?{urllib.parse.urlencode(query_params)}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers={}, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                raw_results = [
+                    case for case in data.get("results", []) if isinstance(case, dict)
+                ]
+                if any(case.get("state") != "PUBLISHED" for case in raw_results):
+                    return _error_text_content(
+                        "Public count API returned non-published case data."
+                    )
+                published_count = data.get("count", len(raw_results))
+                if not isinstance(published_count, int) or published_count < 0:
+                    return _error_text_content(
+                        "Public count API returned an invalid count."
+                    )
+                return _json_text_content(
+                    {
+                        "published_count": published_count,
+                        "count_scope": "published_only",
+                        "filters": filters,
+                        "results": [
+                            _sanitize_public_case(case) for case in raw_results[:5]
+                        ],
+                    }
+                )
+        except httpx.HTTPError as e:
+            return _error_text_content(f"Error accessing public cases API: {str(e)}")
+        except Exception as e:
+            return _error_text_content(f"Unexpected error: {str(e)}")
+
+
 class PublicGetPublishedCaseTool(BaseTool):
     """Public-safe tool for retrieving a single published Jawafdehi case."""
 

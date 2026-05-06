@@ -19,6 +19,7 @@ from .tools import (
     NGMExtractCaseDataTool,
     NGMJudicialTool,
     PatchJawafdehiCaseTool,
+    PublicCountPublishedCasesTool,
     PublicGetPublishedCaseTool,
     PublicSearchJawafEntitiesTool,
     PublicSearchPublishedCasesTool,
@@ -36,6 +37,7 @@ app = Server("jawafdehi-mcp")
 TOOLS: list[BaseTool] = [
     NGMJudicialTool(),
     NGMExtractCaseDataTool(),
+    PublicCountPublishedCasesTool(),
     PublicSearchPublishedCasesTool(),
     PublicGetPublishedCaseTool(),
     PublicSearchJawafEntitiesTool(),

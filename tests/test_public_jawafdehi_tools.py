@@ -7,6 +7,7 @@ import pytest
 
 from jawafdehi_mcp.server import TOOL_MAP
 from jawafdehi_mcp.tools.jawafdehi_cases import (
+    PublicCountPublishedCasesTool,
     PublicGetPublishedCaseTool,
     PublicSearchJawafEntitiesTool,
     PublicSearchPublishedCasesTool,
@@ -59,9 +60,66 @@ def _published_case(**overrides):
 
 
 def test_public_tools_are_registered():
+    assert "public_count_published_cases" in TOOL_MAP
     assert "public_search_published_cases" in TOOL_MAP
     assert "public_get_published_case" in TOOL_MAP
     assert "public_search_jawaf_entities" in TOOL_MAP
+
+
+@pytest.mark.asyncio
+async def test_public_count_returns_published_only_contract(monkeypatch):
+    monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "secret-token")
+    monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", "https://jawafdehi.example")
+    calls = []
+
+    async def fake_get(url, headers, timeout):
+        calls.append({"url": url, "headers": headers, "timeout": timeout})
+        return _response(
+            url,
+            json_payload={
+                "count": 12,
+                "results": [_published_case()],
+            },
+        )
+
+    monkeypatch.setattr(
+        "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+        lambda: _FakeAsyncClient(fake_get),
+    )
+
+    result = await PublicCountPublishedCasesTool().execute({"search": "procurement"})
+    parsed = _text_json(result)
+
+    assert calls[0]["headers"] == {}
+    assert "search=procurement" in calls[0]["url"]
+    assert parsed["published_count"] == 12
+    assert parsed["count_scope"] == "published_only"
+    assert parsed["filters"] == {"search": "procurement"}
+    assert parsed["results"][0]["state"] == "PUBLISHED"
+
+
+@pytest.mark.asyncio
+async def test_public_count_rejects_non_published_rows(monkeypatch):
+    async def fake_get(url, headers, timeout):
+        return _response(
+            url,
+            json_payload={
+                "count": 2,
+                "results": [
+                    _published_case(),
+                    _published_case(id=8, state="IN_REVIEW"),
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+        lambda: _FakeAsyncClient(fake_get),
+    )
+
+    result = await PublicCountPublishedCasesTool().execute({"search": "procurement"})
+
+    assert result[0].text == "Public count API returned non-published case data."
 
 
 @pytest.mark.asyncio
