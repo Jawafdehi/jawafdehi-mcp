@@ -222,6 +222,8 @@ async def test_public_get_strips_private_fields_and_private_source_urls(monkeypa
                             "url": [
                                 "https://safe.example/doc.pdf",
                                 "https://portal.jawafdehi.org/media/private.pdf",
+                                "https://portal.jawafdehi.org/api/sources/source-1/",
+                                "https://portal.jawafdehi.org/sources/source-2/",
                                 "ftp://unsafe.example/doc.pdf",
                             ],
                         },

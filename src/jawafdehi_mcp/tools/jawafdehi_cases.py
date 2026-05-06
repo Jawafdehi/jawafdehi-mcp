@@ -59,7 +59,7 @@ def _safe_public_urls(value: Any) -> list[str]:
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
             continue
         parsed = urllib.parse.urlparse(url)
-        if "jawafdehi/sources/" in parsed.path or "/media/" in parsed.path:
+        if "/sources/" in parsed.path or "/media/" in parsed.path:
             continue
         if url not in safe_urls:
             safe_urls.append(url)
