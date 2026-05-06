@@ -157,8 +157,9 @@ class PublicSearchPublishedCasesTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Search published public Jawafdehi corruption cases. This tool strips "
-            "internal fields and never uses authenticated API access."
+            "Search published public Jawafdehi cases. This tool strips internal "
+            "fields, never uses authenticated API access, and supports optional "
+            "case_type filtering."
         )
 
     @property
@@ -245,8 +246,9 @@ class PublicCountPublishedCasesTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Count published public Jawafdehi corruption cases. Returns an explicit "
-            "published-only count contract for public chat."
+            "Count published public Jawafdehi cases. Returns an explicit "
+            "published-only count contract for public chat and supports optional "
+            "case_type filtering."
         )
 
     @property
