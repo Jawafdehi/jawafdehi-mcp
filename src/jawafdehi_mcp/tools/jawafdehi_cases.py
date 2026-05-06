@@ -174,6 +174,11 @@ class PublicSearchPublishedCasesTool(BaseTool):
                     "type": "string",
                     "description": "Filter cases containing a specific tag.",
                 },
+                "case_type": {
+                    "type": "string",
+                    "enum": ["CORRUPTION", "PROMISES"],
+                    "description": "Optional case type filter. Omit to search all published case types.",
+                },
                 "page": {
                     "type": "integer",
                     "description": "Page number for pagination.",
@@ -183,15 +188,22 @@ class PublicSearchPublishedCasesTool(BaseTool):
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        query_params = {"case_type": "CORRUPTION"}
+        query_params: dict[str, str] = {}
         if arguments.get("search"):
             query_params["search"] = arguments["search"]
         if arguments.get("tags"):
             query_params["tags"] = arguments["tags"]
+        if arguments.get("case_type"):
+            query_params["case_type"] = arguments["case_type"]
         if arguments.get("page"):
             query_params["page"] = str(arguments["page"])
 
-        url = f"{_get_jawafdehi_base_url()}/api/cases/?{urllib.parse.urlencode(query_params)}"
+        query_string = urllib.parse.urlencode(query_params)
+        url = (
+            f"{_get_jawafdehi_base_url()}/api/cases/?{query_string}"
+            if query_string
+            else f"{_get_jawafdehi_base_url()}/api/cases/"
+        )
 
         try:
             async with httpx.AsyncClient() as client:
@@ -344,7 +356,7 @@ class PublicGetPublishedCaseTool(BaseTool):
                 response.raise_for_status()
                 data = response.json()
                 if data.get("state") != "PUBLISHED":
-                    return _error_text_content(f"Case {case_id} is not published.")
+                    return _error_text_content(f"Case {case_id} not found.")
                 return _json_text_content(
                     _sanitize_public_case(
                         data,

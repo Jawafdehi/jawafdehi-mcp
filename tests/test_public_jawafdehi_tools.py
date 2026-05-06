@@ -151,6 +151,7 @@ async def test_public_search_uses_no_auth_and_filters_non_published(monkeypatch)
 
     assert calls[0]["headers"] == {}
     assert calls[0]["url"].startswith("https://jawafdehi.example/api/cases/?")
+    assert "case_type=" not in calls[0]["url"]
     assert parsed["count"] == 1
     assert len(parsed["results"]) == 1
     assert parsed["results"][0]["state"] == "PUBLISHED"
@@ -160,7 +161,34 @@ async def test_public_search_uses_no_auth_and_filters_non_published(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_public_get_rejects_non_published(monkeypatch):
+async def test_public_search_accepts_optional_case_type_filter(monkeypatch):
+    monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", "https://jawafdehi.example")
+    calls = []
+
+    async def fake_get(url, headers, timeout):
+        calls.append({"url": url, "headers": headers, "timeout": timeout})
+        return _response(
+            url,
+            json_payload={
+                "count": 1,
+                "results": [_published_case(case_type="PROMISES")],
+            },
+        )
+
+    monkeypatch.setattr(
+        "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+        lambda: _FakeAsyncClient(fake_get),
+    )
+
+    result = await PublicSearchPublishedCasesTool().execute({"case_type": "PROMISES"})
+    parsed = _text_json(result)
+
+    assert "case_type=PROMISES" in calls[0]["url"]
+    assert parsed["results"][0]["case_type"] == "PROMISES"
+
+
+@pytest.mark.asyncio
+async def test_public_get_treats_non_published_as_not_found(monkeypatch):
     async def fake_get(url, headers, timeout):
         return _response(url, json_payload=_published_case(state="DRAFT"))
 
@@ -171,7 +199,7 @@ async def test_public_get_rejects_non_published(monkeypatch):
 
     result = await PublicGetPublishedCaseTool().execute({"case_id": 7})
 
-    assert result[0].text == "Case 7 is not published."
+    assert result[0].text == "Case 7 not found."
 
 
 @pytest.mark.asyncio
