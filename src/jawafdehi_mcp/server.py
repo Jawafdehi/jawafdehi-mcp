@@ -38,6 +38,8 @@ from .tools.nes import (  # noqa: E402
 
 logger = structlog.get_logger()
 
+logger = structlog.get_logger()
+
 # Initialize MCP server
 app = Server("jawafdehi-mcp")
 
