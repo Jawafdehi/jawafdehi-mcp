@@ -5,9 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
+
+logger = structlog.get_logger()
 
 
 def _get_jawafdehi_base_url() -> str:
@@ -116,11 +119,13 @@ class SearchJawafdehiCasesTool(BaseTool):
 
                 return _json_text_content(data)
         except httpx.HTTPError as e:
+            logger.error("jawafdehi_search_http_error", error=str(e))
             return _error_text_content(
                 f"Error accessing Jawafdehi cases API: {str(e)}\n\n"
                 f"Consider narrowing your search or checking parameters."
             )
         except Exception as e:
+            logger.exception("jawafdehi_search_unexpected_error", error=str(e))
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -200,17 +205,25 @@ class GetJawafdehiCaseTool(BaseTool):
                             if src_response.status_code == 200:
                                 resolved_sources.append(src_response.json())
                         except Exception as e:
-                            print(f"Failed to fetch source {src_id}: {e}")
+                            logger.warning(
+                                "source_fetch_failed",
+                                source_id=src_id,
+                                error=str(e),
+                            )
 
                     if resolved_sources:
                         case_data["_resolved_sources"] = resolved_sources
 
                 return _json_text_content(case_data)
         except httpx.HTTPError as e:
+            logger.error("jawafdehi_get_case_http_error", case_id=case_id, error=str(e))
             return _error_text_content(
                 f"Error accessing Jawafdehi API for case {case_id}: {str(e)}"
             )
         except Exception as e:
+            logger.exception(
+                "jawafdehi_get_case_unexpected_error", case_id=case_id, error=str(e)
+            )
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -301,10 +314,12 @@ class CreateJawafdehiCaseTool(BaseTool):
                     )
                 )
         except httpx.HTTPError as e:
+            logger.error("jawafdehi_create_case_http_error", error=str(e))
             return _error_text_content(
                 f"Error accessing Jawafdehi create API: {str(e)}"
             )
         except Exception as e:
+            logger.exception("jawafdehi_create_case_unexpected_error", error=str(e))
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -387,10 +402,18 @@ class PatchJawafdehiCaseTool(BaseTool):
                     )
                 )
         except httpx.HTTPError as e:
+            logger.error(
+                "jawafdehi_patch_case_http_error", case_id=case_id, error=str(e)
+            )
             return _error_text_content(
                 f"Error accessing Jawafdehi patch API for case {case_id}: {str(e)}"
             )
         except Exception as e:
+            logger.exception(
+                "jawafdehi_patch_case_unexpected_error",
+                case_id=case_id,
+                error=str(e),
+            )
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -486,8 +509,12 @@ class SubmitNESChangeTool(BaseTool):
                 f"{error_body}"
             )
         except httpx.HTTPError as e:
+            logger.error("jawafdehi_submit_nes_change_http_error", error=str(e))
             return _error_text_content(f"Error submitting NES change: {str(e)}")
         except Exception as e:
+            logger.exception(
+                "jawafdehi_submit_nes_change_unexpected_error", error=str(e)
+            )
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -546,6 +573,7 @@ class CreateJawafEntityTool(BaseTool):
                 _build_http_error_payload(response, "Error creating JawafEntity")
             )
         except Exception as e:
+            logger.exception("jawafdehi_create_entity_unexpected_error", error=str(e))
             return _error_text_content(f"Unexpected error creating entity: {str(e)}")
 
 
@@ -663,6 +691,9 @@ class UploadDocumentSourceTool(BaseTool):
                 _build_http_error_payload(response, "Error uploading document source")
             )
         except Exception as e:
+            logger.exception(
+                "jawafdehi_upload_document_unexpected_error", error=str(e)
+            )
             return _error_text_content(f"Unexpected error uploading document: {str(e)}")
 
 
@@ -724,10 +755,14 @@ class SearchJawafEntitiesTool(BaseTool):
                 response.raise_for_status()
                 return _json_text_content(response.json())
         except httpx.HTTPError as e:
+            logger.error("jawafdehi_search_entities_http_error", error=str(e))
             return _error_text_content(
                 f"Error accessing Jawafdehi entities API: {str(e)}"
             )
         except Exception as e:
+            logger.exception(
+                "jawafdehi_search_entities_unexpected_error", error=str(e)
+            )
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
@@ -776,8 +811,18 @@ class GetJawafEntityTool(BaseTool):
                 response.raise_for_status()
                 return _json_text_content(response.json())
         except httpx.HTTPError as e:
+            logger.error(
+                "jawafdehi_get_entity_http_error",
+                entity_id=entity_id,
+                error=str(e),
+            )
             return _error_text_content(
                 f"Error accessing Jawafdehi entities API for entity {entity_id}: {str(e)}"
             )
         except Exception as e:
+            logger.exception(
+                "jawafdehi_get_entity_unexpected_error",
+                entity_id=entity_id,
+                error=str(e),
+            )
             return _error_text_content(f"Unexpected error: {str(e)}")

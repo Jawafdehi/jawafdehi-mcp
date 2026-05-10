@@ -5,9 +5,12 @@ import os
 from typing import Any
 
 import httpx
+import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
+
+logger = structlog.get_logger()
 from .ngm_proxy import (
     execute_ngm_proxy_query,
     get_jawafdehi_api_config_strict,
@@ -345,16 +348,19 @@ Court IDs (court_identifier):
             return [TextContent(type="text", text=json.dumps(response))]
 
         except httpx.HTTPError as e:
+            logger.error("ngm_extract_http_error", error=str(e), category="http")
             error_msg = str(e).replace('"', '\\"')
             error_response = f'{{"success": false, "error": "HTTP error: {error_msg}"}}'
             return [TextContent(type="text", text=error_response)]
         except RuntimeError as e:
+            logger.error("ngm_extract_proxy_error", error=str(e), category="proxy")
             error_msg = str(e).replace('"', '\\"')
             error_response = (
                 f'{{"success": false, "error": "Proxy error: {error_msg}"}}'
             )
             return [TextContent(type="text", text=error_response)]
         except Exception as e:
+            logger.exception("ngm_extract_unexpected_error", error=str(e))
             error_msg = str(e).replace('"', '\\"')
             error_response = (
                 f'{{"success": false, "error": "Unexpected error: {error_msg}"}}'

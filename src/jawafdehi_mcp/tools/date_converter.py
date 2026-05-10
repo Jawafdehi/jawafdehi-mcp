@@ -2,9 +2,12 @@ import datetime
 from typing import Any
 
 import nepali_datetime
+import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
+
+logger = structlog.get_logger()
 
 
 class DateConverterTool(BaseTool):
@@ -94,6 +97,12 @@ class DateConverterTool(BaseTool):
                         f"Converted BS {date_str} to AD: {result} (Asia/Kathmandu Timezone Context)"
                     )
             except Exception as e:
+                logger.error(
+                    "date_conversion_failed",
+                    date_str=date_str,
+                    mode=mode,
+                    error=str(e),
+                )
                 results.append(f"{date_str}: Error performing conversion: {str(e)}")
 
         return [TextContent(type="text", text="\n".join(results))]

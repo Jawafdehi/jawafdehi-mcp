@@ -5,6 +5,9 @@ import os
 from typing import Any
 
 import httpx
+import structlog
+
+logger = structlog.get_logger()
 
 
 def get_jawafdehi_api_config() -> tuple[str, str | None]:

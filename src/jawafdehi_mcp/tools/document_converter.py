@@ -1,17 +1,17 @@
 """Unified document conversion tool powered by MarkItDown plugins."""
 
-import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
+import structlog
 from markitdown import MarkItDown
 from mcp.types import TextContent
 
 from .base import BaseTool
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 class DocumentConverterTool(BaseTool):
@@ -146,8 +146,11 @@ class DocumentConverterTool(BaseTool):
             result = converter.convert_uri(source)
             return result.markdown, None
         except Exception as e:
-            logger.exception(
-                "Unexpected document conversion error (%s)", type(e).__name__
+            logger.error(
+                "document_conversion_failed",
+                error_type=type(e).__name__,
+                error=str(e),
+                exc_info=True,
             )
             return "", str(e)
 
