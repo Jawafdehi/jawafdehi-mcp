@@ -200,4 +200,4 @@ poetry run isort src/ tests/
 
 ## License
 
-Open source - see LICENSE file for details.
+Licensed under the [Hippocratic License 3.0](./LICENSE), an [Ethical Source](https://ethicalsource.dev) license. See [LICENSING.md](./LICENSING.md) for details.
