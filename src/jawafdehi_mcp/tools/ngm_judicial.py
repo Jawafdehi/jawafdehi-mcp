@@ -59,12 +59,12 @@ Court IDs (court_identifier):
             "required": ["query"],
         }
 
-    def _validate_environment(self) -> tuple[str, str]:
+    def _validate_environment(self) -> tuple[str, str | None]:
         """
         Validate required environment variables.
 
         Returns:
-            Tuple of (base_url, token)
+            Tuple of (base_url, optional token)
 
         Raises:
             ValueError: If required API configuration is missing or invalid

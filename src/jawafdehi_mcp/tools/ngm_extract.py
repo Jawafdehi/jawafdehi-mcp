@@ -10,7 +10,7 @@ from mcp.types import TextContent
 from .base import BaseTool
 from .ngm_proxy import (
     execute_ngm_proxy_query,
-    get_jawafdehi_api_config,
+    get_jawafdehi_api_config_strict,
     rows_to_dicts,
     sql_quote,
 )
@@ -55,7 +55,7 @@ Court IDs (court_identifier):
         }
 
     def _validate_environment(self) -> tuple[str, str]:
-        return get_jawafdehi_api_config()
+        return get_jawafdehi_api_config_strict()
 
     @staticmethod
     def _sql_quote(value: str) -> str:
