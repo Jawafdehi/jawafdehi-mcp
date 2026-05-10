@@ -1,7 +1,5 @@
 """Tests for public/private MCP profile gating."""
 
-import pytest
-
 from jawafdehi_mcp.server import (
     PUBLIC_READ_ONLY_TOOL_NAMES,
     TOOL_MAP,

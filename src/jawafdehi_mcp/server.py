@@ -30,7 +30,11 @@ from .tools import (  # noqa: E402
     SubmitNESChangeTool,
     UploadDocumentSourceTool,
 )
-from .tools.nes import GetNESEntitiesTool, GetNESTagsTool, SearchNESEntitiesTool
+from .tools.nes import (  # noqa: E402
+    GetNESEntitiesTool,
+    GetNESTagsTool,
+    SearchNESEntitiesTool,
+)
 
 logger = structlog.get_logger()
 

@@ -9,14 +9,14 @@ import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
-
-logger = structlog.get_logger()
-from .ngm_proxy import (
+from .ngm_proxy import (  # noqa: E402
     execute_ngm_proxy_query,
     get_jawafdehi_api_config_strict,
     rows_to_dicts,
     sql_quote,
 )
+
+logger = structlog.get_logger()
 
 
 class NGMExtractCaseDataTool(BaseTool):
