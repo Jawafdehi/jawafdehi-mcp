@@ -12,6 +12,7 @@ SERVICE_NAME = "jawafdehi-mcp"
 def _get_version() -> str:
     try:
         from . import __version__
+
         return __version__
     except ImportError:
         return "0.0.0"
@@ -29,15 +30,9 @@ def _init_sentry() -> None:
         sentry_sdk.init(
             dsn=sentry_dsn,
             environment=os.getenv("SENTRY_ENVIRONMENT", "development"),
-            traces_sample_rate=float(
-                os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")
-            ),
-            profiles_sample_rate=float(
-                os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")
-            ),
-            release=os.getenv(
-                "SENTRY_RELEASE", f"{SERVICE_NAME}@{_get_version()}"
-            ),
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
+            release=os.getenv("SENTRY_RELEASE", f"{SERVICE_NAME}@{_get_version()}"),
             integrations=[
                 StructlogIntegration(),
             ],
