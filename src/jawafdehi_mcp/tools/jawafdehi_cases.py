@@ -691,9 +691,7 @@ class UploadDocumentSourceTool(BaseTool):
                 _build_http_error_payload(response, "Error uploading document source")
             )
         except Exception as e:
-            logger.exception(
-                "jawafdehi_upload_document_unexpected_error", error=str(e)
-            )
+            logger.exception("jawafdehi_upload_document_unexpected_error", error=str(e))
             return _error_text_content(f"Unexpected error uploading document: {str(e)}")
 
 
@@ -760,9 +758,7 @@ class SearchJawafEntitiesTool(BaseTool):
                 f"Error accessing Jawafdehi entities API: {str(e)}"
             )
         except Exception as e:
-            logger.exception(
-                "jawafdehi_search_entities_unexpected_error", error=str(e)
-            )
+            logger.exception("jawafdehi_search_entities_unexpected_error", error=str(e))
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 

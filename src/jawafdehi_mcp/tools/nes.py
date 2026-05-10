@@ -377,9 +377,7 @@ class GetNESEntityPrefixSchemaTool(BaseTool):
                 )
             ]
         except httpx.HTTPError as exc:
-            logger.error(
-                "nes_prefix_schema_http_error", prefix=prefix, error=str(exc)
-            )
+            logger.error("nes_prefix_schema_http_error", prefix=prefix, error=str(exc))
             return [
                 TextContent(
                     type="text",
