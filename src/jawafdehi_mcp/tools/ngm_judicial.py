@@ -5,10 +5,13 @@ import re
 from typing import Any
 
 import httpx
+import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
 from .ngm_proxy import execute_ngm_proxy_query, get_jawafdehi_api_config
+
+logger = structlog.get_logger()
 
 # Allowed tables (excluding scraped_dates)
 ALLOWED_TABLES = {
@@ -59,12 +62,12 @@ Court IDs (court_identifier):
             "required": ["query"],
         }
 
-    def _validate_environment(self) -> tuple[str, str]:
+    def _validate_environment(self) -> tuple[str, str | None]:
         """
         Validate required environment variables.
 
         Returns:
-            Tuple of (base_url, token)
+            Tuple of (base_url, optional token)
 
         Raises:
             ValueError: If required API configuration is missing or invalid
@@ -199,6 +202,7 @@ Court IDs (court_identifier):
                 )
             ]
         except RuntimeError as e:
+            logger.error("ngm_query_failed", error=str(e), category="proxy_api")
             error_msg = str(e).replace('"', '\\"')
             error_response = (
                 f'{{"success": false, "data": null, '
@@ -206,6 +210,7 @@ Court IDs (court_identifier):
             )
             return [TextContent(type="text", text=error_response)]
         except httpx.HTTPError as e:
+            logger.error("ngm_query_http_error", error=str(e), category="http")
             error_msg = str(e).replace('"', '\\"')
             error_response = (
                 f'{{"success": false, "data": null, '
@@ -213,6 +218,7 @@ Court IDs (court_identifier):
             )
             return [TextContent(type="text", text=error_response)]
         except Exception as e:
+            logger.exception("ngm_query_unexpected_error", error=str(e))
             error_msg = str(e).replace('"', '\\"')
             error_response = (
                 f'{{"success": false, "data": null, '

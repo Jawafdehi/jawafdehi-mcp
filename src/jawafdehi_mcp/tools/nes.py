@@ -4,9 +4,12 @@ import urllib.parse
 from typing import Any
 
 import httpx
+import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
+
+logger = structlog.get_logger()
 
 
 def _get_nes_base_url() -> str:
@@ -109,6 +112,7 @@ class SearchNESEntitiesTool(BaseTool):
                     )
                 ]
         except httpx.HTTPError as e:
+            logger.error("nes_search_http_error", error=str(e))
             return [
                 TextContent(
                     type="text",
@@ -116,6 +120,7 @@ class SearchNESEntitiesTool(BaseTool):
                 )
             ]
         except Exception as e:
+            logger.exception("nes_search_unexpected_error", error=str(e))
             return [TextContent(type="text", text=f"Unexpected error: {str(e)}")]
 
 
@@ -179,8 +184,18 @@ class GetNESEntitiesTool(BaseTool):
                         )
 
                 except httpx.HTTPError as e:
+                    logger.error(
+                        "nes_get_entities_http_error",
+                        chunk=i // chunk_size + 1,
+                        error=str(e),
+                    )
                     errors.append(f"HTTP Error for chunk {i//chunk_size + 1}: {str(e)}")
                 except Exception as e:
+                    logger.exception(
+                        "nes_get_entities_unexpected_error",
+                        chunk=i // chunk_size + 1,
+                        error=str(e),
+                    )
                     errors.append(
                         f"Unexpected error for chunk {i//chunk_size + 1}: {str(e)}"
                     )
@@ -235,10 +250,12 @@ class GetNESTagsTool(BaseTool):
                     )
                 ]
         except httpx.HTTPError as e:
+            logger.error("nes_tags_http_error", error=str(e))
             return [
                 TextContent(type="text", text=f"Error accessing NES Tags API: {str(e)}")
             ]
         except Exception as e:
+            logger.exception("nes_tags_unexpected_error", error=str(e))
             return [TextContent(type="text", text=f"Unexpected error: {str(e)}")]
 
 
@@ -282,6 +299,7 @@ class GetNESEntityPrefixesTool(BaseTool):
                 )
             ]
         except httpx.TimeoutException:
+            logger.warning("nes_prefixes_timeout")
             return [
                 TextContent(
                     type="text",
@@ -289,6 +307,7 @@ class GetNESEntityPrefixesTool(BaseTool):
                 )
             ]
         except httpx.HTTPError as exc:
+            logger.error("nes_prefixes_http_error", error=str(exc))
             return [
                 TextContent(
                     type="text",
@@ -296,6 +315,7 @@ class GetNESEntityPrefixesTool(BaseTool):
                 )
             ]
         except Exception as exc:
+            logger.exception("nes_prefixes_unexpected_error", error=str(exc))
             return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]
 
 
@@ -349,15 +369,15 @@ class GetNESEntityPrefixSchemaTool(BaseTool):
                 )
             ]
         except httpx.TimeoutException:
+            logger.warning("nes_prefix_schema_timeout", prefix=prefix)
             return [
                 TextContent(
                     type="text",
-                    text=(
-                        "Error fetching NES entity prefix schema: " "request timed out."
-                    ),
+                    text="Error fetching NES entity prefix schema: request timed out.",
                 )
             ]
         except httpx.HTTPError as exc:
+            logger.error("nes_prefix_schema_http_error", prefix=prefix, error=str(exc))
             return [
                 TextContent(
                     type="text",
@@ -365,4 +385,7 @@ class GetNESEntityPrefixSchemaTool(BaseTool):
                 )
             ]
         except Exception as exc:
+            logger.exception(
+                "nes_prefix_schema_unexpected_error", prefix=prefix, error=str(exc)
+            )
             return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]

@@ -108,12 +108,14 @@ class TestEnvironmentValidation:
         """Set up test fixtures."""
         self.tool = NGMJudicialTool()
 
-    def test_missing_api_token(self, monkeypatch):
-        """Test that missing JAWAFDEHI_API_TOKEN raises error."""
+    def test_missing_api_token_is_ok_in_public_mode(self, monkeypatch):
+        """Test that missing JAWAFDEHI_API_TOKEN is allowed (public mode)."""
+        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org")
         monkeypatch.delenv("JAWAFDEHI_API_TOKEN", raising=False)
 
-        with pytest.raises(ValueError, match="JAWAFDEHI_API_TOKEN.*required"):
-            self.tool._validate_environment()
+        base_url, token = self.tool._validate_environment()
+        assert base_url == "https://portal.jawafdehi.org"
+        assert token is None
 
     def test_invalid_base_url(self, monkeypatch):
         """Test that non-HTTP URL raises error."""
