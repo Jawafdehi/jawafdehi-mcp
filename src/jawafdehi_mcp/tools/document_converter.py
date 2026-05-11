@@ -39,6 +39,10 @@ class DocumentConverterTool(BaseTool):
             "**Output behavior:**\n"
             "- Returns Markdown directly by default\n"
             "- Set `output_path` to save the converted Markdown to a file instead\n\n"
+            "**PDF page ranges:**\n"
+            "- Set `pages` to convert only a PDF page/range, for example `12` or "
+            "`12-15`\n"
+            "- Or set `page_start` and optionally `page_end` to build the range\n\n"
             "Set `enable_plugins=false` only to bypass MarkItDown plugins for "
             "compatibility or troubleshooting."
         )
@@ -73,6 +77,30 @@ class DocumentConverterTool(BaseTool):
                         "Optional. Absolute path to write the converted Markdown file. "
                         "Parent directories are created automatically. "
                         "If not provided, the markdown content is returned directly."
+                    ),
+                },
+                "pages": {
+                    "type": "string",
+                    "description": (
+                        "Optional PDF page or inclusive page range to convert, such as "
+                        "'12' or '12-15'. Passed to likhit-backed PDF conversion when "
+                        "plugins are enabled."
+                    ),
+                },
+                "page_start": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Optional first PDF page to convert. Use with page_end for an "
+                        "inclusive page range."
+                    ),
+                },
+                "page_end": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "Optional last PDF page to convert. Defaults to page_start "
+                        "when page_start is provided."
                     ),
                 },
                 "enable_plugins": {
@@ -126,6 +154,42 @@ class DocumentConverterTool(BaseTool):
 
         return None
 
+    def _get_pages(self, arguments: dict[str, Any]) -> str | None:
+        """Normalize optional PDF page-range arguments for likhit."""
+        pages = arguments.get("pages")
+        page_start = arguments.get("page_start")
+        page_end = arguments.get("page_end")
+
+        if pages not in (None, "") and page_start is not None:
+            raise ValueError("Cannot specify both 'pages' and 'page_start'.")
+        if pages not in (None, "") and page_end is not None:
+            raise ValueError("Cannot specify both 'pages' and 'page_end'.")
+
+        if pages not in (None, ""):
+            normalized = str(pages).strip()
+            if not normalized:
+                return None
+            return normalized
+
+        if page_start is None and page_end is None:
+            return None
+        if page_start is None:
+            raise ValueError("'page_start' is required when 'page_end' is provided.")
+
+        try:
+            start = int(page_start)
+            end = int(page_end if page_end is not None else page_start)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("'page_start' and 'page_end' must be integers.") from exc
+
+        if start < 1 or end < 1:
+            raise ValueError("'page_start' and 'page_end' must be at least 1.")
+        if end < start:
+            raise ValueError("'page_end' cannot be before 'page_start'.")
+        if start == end:
+            return str(start)
+        return f"{start}-{end}"
+
     async def _convert_with_markitdown(
         self, source: str, arguments: dict[str, Any]
     ) -> tuple[str, str | None]:
@@ -142,8 +206,10 @@ class DocumentConverterTool(BaseTool):
                 source = Path(source).resolve().as_uri()
 
             enable_plugins = arguments.get("enable_plugins", True)
+            pages = self._get_pages(arguments)
             converter = MarkItDown(enable_plugins=enable_plugins)
-            result = converter.convert_uri(source)
+            kwargs = {"pages": pages} if pages else {}
+            result = converter.convert_uri(source, **kwargs)
             return result.markdown, None
         except Exception as e:
             logger.exception(
@@ -177,9 +243,16 @@ class DocumentConverterTool(BaseTool):
                     )
                 ]
 
+        try:
+            pages = self._get_pages(arguments)
+        except ValueError as e:
+            return [TextContent(type="text", text=f"Error: {e}")]
+
         converter_used = "MarkItDown"
         if arguments.get("enable_plugins", True):
             converter_used += " + plugins"
+        if pages:
+            converter_used += f" pages {pages}"
         markdown, error = await self._convert_with_markitdown(source, arguments)
 
         # Handle conversion error

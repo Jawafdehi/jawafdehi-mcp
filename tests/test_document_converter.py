@@ -27,6 +27,9 @@ class TestDocumentConverterTool:
             "file_path",
             "uri",
             "output_path",
+            "pages",
+            "page_start",
+            "page_end",
             "enable_plugins",
         ]
         for field in expected_fields:
@@ -168,6 +171,76 @@ class TestDocumentConverterTool:
         mock_converter.convert_uri.assert_called_once_with(
             "https://example.com/document.pdf"
         )
+
+    @pytest.mark.asyncio
+    async def test_pages_argument_is_passed_to_markitdown(self):
+        """PDF page ranges should pass through for likhit-backed conversion."""
+        fake_markdown = "# Page range\n"
+        mock_result = MagicMock()
+        mock_result.markdown = fake_markdown
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute(
+                {
+                    "uri": "https://example.com/document.pdf",
+                    "pages": "12-15",
+                }
+            )
+
+        assert len(result) == 1
+        assert "pages 12-15" in result[0].text
+        assert fake_markdown in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(
+            "https://example.com/document.pdf",
+            pages="12-15",
+        )
+
+    @pytest.mark.asyncio
+    async def test_page_start_and_end_build_pages_argument(self):
+        """Structured page_start/page_end inputs should become a pages range."""
+        mock_result = MagicMock()
+        mock_result.markdown = "# Page range\n"
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+
+            result = await self.tool.execute(
+                {
+                    "uri": "https://example.com/document.pdf",
+                    "page_start": 12,
+                    "page_end": 15,
+                }
+            )
+
+        assert len(result) == 1
+        assert "pages 12-15" in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(
+            "https://example.com/document.pdf",
+            pages="12-15",
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejects_conflicting_page_range_arguments(self):
+        result = await self.tool.execute(
+            {
+                "uri": "https://example.com/document.pdf",
+                "pages": "12-15",
+                "page_start": 12,
+            }
+        )
+
+        assert len(result) == 1
+        assert "Cannot specify both 'pages' and 'page_start'" in result[0].text
 
     @pytest.mark.asyncio
     async def test_output_path_writing(self, tmp_path):
