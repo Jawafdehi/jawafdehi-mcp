@@ -9,9 +9,9 @@ import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
-from .ngm_proxy import (  # noqa: E402
+from .ngm_proxy import (
     execute_ngm_proxy_query,
-    get_jawafdehi_api_config_strict,
+    get_jawafdehi_api_config,
     rows_to_dicts,
     sql_quote,
 )
@@ -58,7 +58,7 @@ Court IDs (court_identifier):
         }
 
     def _validate_environment(self) -> tuple[str, str]:
-        return get_jawafdehi_api_config_strict()
+        return get_jawafdehi_api_config()
 
     @staticmethod
     def _sql_quote(value: str) -> str:

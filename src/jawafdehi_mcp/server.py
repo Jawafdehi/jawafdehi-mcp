@@ -1,9 +1,11 @@
 """MCP server for Jawafdehi and NGM judicial data queries."""
 
 import os
+import uuid
 from typing import Any
 
 import structlog
+import structlog.contextvars
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
@@ -84,12 +86,10 @@ PUBLIC_READ_ONLY_TOOL_NAMES = {
 
 
 def _is_public_mode() -> bool:
-    """Return True if JAWAFDEHI_API_TOKEN is not set (public read-only mode)."""
     return not os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
 
 
 def _get_available_tools() -> list[BaseTool]:
-    """Return the list of tools available based on current profile."""
     if _is_public_mode():
         return [tool for tool in TOOLS if tool.name in PUBLIC_READ_ONLY_TOOL_NAMES]
     return TOOLS
@@ -115,6 +115,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         logger.error("unknown_tool_requested", tool_name=name)
         raise ValueError(f"Unknown tool: {name}")
 
+    request_id = str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
     logger.info("tool_call_started", tool_name=name)
     try:
         result = await tool.execute(arguments)
@@ -122,13 +124,15 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     except Exception:
         logger.exception("tool_execution_failed", tool_name=name)
         raise
+    finally:
+        structlog.contextvars.unbind_contextvars("request_id")
 
 
 def main():
     """Run the MCP server."""
-    import asyncio
-
     logger.info("server_starting")
+
+    import asyncio
 
     async def run():
         async with stdio_server() as (read_stream, write_stream):
