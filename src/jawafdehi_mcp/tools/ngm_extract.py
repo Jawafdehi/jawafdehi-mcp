@@ -9,8 +9,7 @@ import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
-
-from .ngm_proxy import (  # noqa: E402
+from .ngm_proxy import (
     execute_ngm_proxy_query,
     get_jawafdehi_api_config,
     rows_to_dicts,
