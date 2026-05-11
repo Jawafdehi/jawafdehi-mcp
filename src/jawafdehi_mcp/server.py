@@ -70,9 +70,16 @@ TOOL_MAP = {tool.name: tool for tool in TOOLS}
 PUBLIC_READ_ONLY_TOOL_NAMES = {
     "search_jawafdehi_cases",
     "get_jawafdehi_case",
+    "search_jawaf_entities",
+    "get_jawaf_entity",
     "search_nes_entities",
     "get_nes_entities",
+    "get_nes_tags",
+    "get_nes_entity_prefixes",
+    "get_nes_entity_prefix_schema",
     "ngm_query_judicial",
+    "convert_date",
+    "convert_to_markdown",
 }
 
 

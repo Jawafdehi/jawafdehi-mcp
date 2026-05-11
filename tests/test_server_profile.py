@@ -32,7 +32,7 @@ class TestAvailableTools:
         tools = _get_available_tools()
         tool_names = {t.name for t in tools}
         assert tool_names == PUBLIC_READ_ONLY_TOOL_NAMES
-        assert len(tools) == 5
+        assert len(tools) == 12
 
     def test_private_mode_returns_all_tools(self, monkeypatch):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
