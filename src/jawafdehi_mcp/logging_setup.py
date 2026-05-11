@@ -49,6 +49,8 @@ def setup_logging() -> None:
     """Configure structlog logging and optionally initialize Sentry."""
     _init_sentry()
 
+    structlog.contextvars.bind_contextvars(service=SERVICE_NAME)
+
     timestamper = structlog.processors.TimeStamper(fmt="iso")
 
     shared_processors = [

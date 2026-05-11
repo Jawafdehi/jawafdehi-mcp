@@ -1,8 +1,10 @@
 """MCP server for Jawafdehi and NGM judicial data queries."""
 
+import uuid
 from typing import Any
 
 import structlog
+import structlog.contextvars
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
@@ -80,6 +82,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         logger.error("unknown_tool_requested", tool_name=name)
         raise ValueError(f"Unknown tool: {name}")
 
+    request_id = str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
     logger.info("tool_call_started", tool_name=name)
     try:
         result = await tool.execute(arguments)
@@ -87,6 +91,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     except Exception:
         logger.exception("tool_execution_failed", tool_name=name)
         raise
+    finally:
+        structlog.contextvars.unbind_contextvars("request_id")
 
 
 def main():
