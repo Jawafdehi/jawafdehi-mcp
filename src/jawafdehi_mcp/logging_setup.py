@@ -7,6 +7,7 @@ import sys
 import structlog
 
 SERVICE_NAME = "jawafdehi-mcp"
+SENTRY_DSN = "https://examplePublicKey@o0.ingest.sentry.io/0"
 
 
 def _get_version() -> str:
@@ -19,9 +20,7 @@ def _get_version() -> str:
 
 
 def _init_sentry() -> None:
-    sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
-    if not sentry_dsn:
-        return
+    sentry_dsn = os.getenv("SENTRY_DSN", SENTRY_DSN).strip()
 
     try:
         import sentry_sdk
