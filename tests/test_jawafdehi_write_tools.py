@@ -11,7 +11,6 @@ from jawafdehi_mcp.tools.jawafdehi_cases import (
     CreateJawafdehiCaseTool,
     CreateJawafEntityTool,
     PatchJawafdehiCaseTool,
-    SearchJawafEntitiesTool,
     UploadDocumentSourceTool,
 )
 

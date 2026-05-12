@@ -191,9 +191,7 @@ class GetJawafdehiCaseTool(BaseTool):
                     case_url, headers=auth_headers, timeout=30.0
                 )
                 if response.status_code == 404:
-                    return _error_text_content(
-                        f"Case not found ({lookup_label})."
-                    )
+                    return _error_text_content(f"Case not found ({lookup_label}).")
                 response.raise_for_status()
                 case_data = response.json()
 
