@@ -7,7 +7,7 @@ import sys
 import structlog
 
 SERVICE_NAME = "jawafdehi-mcp"
-SENTRY_DSN = "https://examplePublicKey@o0.ingest.sentry.io/0"
+SENTRY_DSN = "https://f56afa3cccf0b71c8a09b1dc5a596d4a@o4511364048027648.ingest.de.sentry.io/4511366946553936"
 
 
 def _get_version() -> str:
