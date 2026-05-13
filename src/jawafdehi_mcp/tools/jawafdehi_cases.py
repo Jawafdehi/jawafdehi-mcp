@@ -139,8 +139,10 @@ class GetJawafdehiCaseTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Retrieve detailed information about a specific published Jawafdehi "
-            "case, including its allegations, evidence, timeline, and audit history."
+            "Retrieve detailed information about a specific Jawafdehi case "
+            "(published or draft), including its allegations, evidence, timeline, "
+            "and audit history. All cases (including drafts) have auto-generated "
+            "slugs. Use the 'slug' from search results for direct lookup."
         )
 
     @property
@@ -148,9 +150,12 @@ class GetJawafdehiCaseTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "case_id": {
-                    "type": "integer",
-                    "description": "A unique integer value identifying the case.",
+                "slug": {
+                    "type": "string",
+                    "description": (
+                        "The URL slug of the case (e.g. from search results). "
+                        "The canonical identifier for API lookup."
+                    ),
                 },
                 "fetch_sources": {
                     "type": "boolean",
@@ -161,31 +166,36 @@ class GetJawafdehiCaseTool(BaseTool):
                     "default": False,
                 },
             },
-            "required": ["case_id"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        case_id = arguments.get("case_id")
-        if not case_id:
-            return _error_text_content("Error: case_id is required")
+        base_url = _get_jawafdehi_base_url()
+        auth_headers = _get_auth_headers()
+
+        slug = arguments.get("slug")
+
+        if slug and isinstance(slug, str) and slug.strip():
+            case_url = f"{base_url.rstrip('/')}/api/cases/{slug.strip()}/"
+            lookup_label = f"slug={slug.strip()}"
+        else:
+            return _error_text_content(
+                "Error: 'slug' (string) is required. "
+                "Use the 'slug' field from search_jawafdehi_cases results."
+            )
 
         fetch_sources = arguments.get("fetch_sources", False)
-        base_url = _get_jawafdehi_base_url()
-        case_url = f"{base_url.rstrip('/')}/api/cases/{case_id}/"
 
         try:
-            auth_headers = _get_auth_headers()
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     case_url, headers=auth_headers, timeout=30.0
                 )
                 if response.status_code == 404:
-                    return _error_text_content(f"Case {case_id} not found.")
+                    return _error_text_content(f"Case not found ({lookup_label}).")
                 response.raise_for_status()
                 case_data = response.json()
 
                 if fetch_sources and "evidence" in case_data:
-                    # Resolve sources listed in the evidence property
                     resolved_sources = []
                     source_ids_to_fetch = set()
 
@@ -216,13 +226,19 @@ class GetJawafdehiCaseTool(BaseTool):
 
                 return _json_text_content(case_data)
         except httpx.HTTPError as e:
-            logger.error("jawafdehi_get_case_http_error", case_id=case_id, error=str(e))
+            logger.error(
+                "jawafdehi_get_case_http_error",
+                lookup_label=lookup_label,
+                error=str(e),
+            )
             return _error_text_content(
-                f"Error accessing Jawafdehi API for case {case_id}: {str(e)}"
+                f"Error accessing Jawafdehi API ({lookup_label}): {str(e)}"
             )
         except Exception as e:
             logger.exception(
-                "jawafdehi_get_case_unexpected_error", case_id=case_id, error=str(e)
+                "jawafdehi_get_case_unexpected_error",
+                lookup_label=lookup_label,
+                error=str(e),
             )
             return _error_text_content(f"Unexpected error: {str(e)}")
 
@@ -334,7 +350,8 @@ class PatchJawafdehiCaseTool(BaseTool):
     def description(self) -> str:
         return (
             "Patch a Jawafdehi case using raw RFC 6902 JSON Patch operations. "
-            "Requires JAWAFDEHI_API_TOKEN."
+            "Requires JAWAFDEHI_API_TOKEN. Use a slug (from search results) "
+            "for direct lookup."
         )
 
     @property
@@ -342,9 +359,12 @@ class PatchJawafdehiCaseTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "case_id": {
-                    "type": "integer",
-                    "description": "Database id of the case to patch.",
+                "slug": {
+                    "type": "string",
+                    "description": (
+                        "The URL slug of the case to patch. "
+                        "Use the 'slug' field from search_jawafdehi_cases results."
+                    ),
                 },
                 "operations": {
                     "type": "array",
@@ -360,12 +380,12 @@ class PatchJawafdehiCaseTool(BaseTool):
                     },
                 },
             },
-            "required": ["case_id", "operations"],
+            "required": ["slug", "operations"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        case_id = arguments.get("case_id")
         operations = arguments.get("operations")
+        slug = arguments.get("slug")
         token = _get_jawafdehi_api_token()
 
         if not token:
@@ -373,15 +393,22 @@ class PatchJawafdehiCaseTool(BaseTool):
                 "Error: JAWAFDEHI_API_TOKEN environment variable is required."
             )
 
-        if case_id is None:
-            return _error_text_content("Error: case_id is required")
+        if not slug or not isinstance(slug, str) or not slug.strip():
+            return _error_text_content(
+                "Error: 'slug' (string) is required. "
+                "Use the 'slug' field from search_jawafdehi_cases results."
+            )
 
         if not isinstance(operations, list):
             return _error_text_content(
                 "Error: operations must be a JSON Patch array of operation objects."
             )
 
-        url = f"{_get_jawafdehi_base_url()}/api/cases/{case_id}/"
+        base_url = _get_jawafdehi_base_url()
+
+        url = f"{base_url.rstrip('/')}/api/cases/{slug.strip()}/"
+        lookup_label = f"slug={slug.strip()}"
+
         headers = {"Authorization": f"Token {token}"}
 
         try:
@@ -398,20 +425,23 @@ class PatchJawafdehiCaseTool(BaseTool):
 
                 return _json_text_content(
                     _build_http_error_payload(
-                        response, f"Error patching Jawafdehi case {case_id} via API."
+                        response,
+                        f"Error patching Jawafdehi case ({lookup_label}) via API.",
                     )
                 )
         except httpx.HTTPError as e:
             logger.error(
-                "jawafdehi_patch_case_http_error", case_id=case_id, error=str(e)
+                "jawafdehi_patch_case_http_error",
+                lookup_label=lookup_label,
+                error=str(e),
             )
             return _error_text_content(
-                f"Error accessing Jawafdehi patch API for case {case_id}: {str(e)}"
+                f"Error accessing Jawafdehi patch API ({lookup_label}): {str(e)}"
             )
         except Exception as e:
             logger.exception(
                 "jawafdehi_patch_case_unexpected_error",
-                case_id=case_id,
+                lookup_label=lookup_label,
                 error=str(e),
             )
             return _error_text_content(f"Unexpected error: {str(e)}")
