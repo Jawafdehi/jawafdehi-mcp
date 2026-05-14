@@ -505,7 +505,7 @@ class SubmitNESChangeTool(BaseTool):
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         try:
-            token = self._get_api_token()
+            self._get_api_token()
         except ValueError as exc:
             return _error_text_content(f"Error: {exc}")
 
