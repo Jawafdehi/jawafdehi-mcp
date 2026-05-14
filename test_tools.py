@@ -11,10 +11,12 @@ async def main():
     print(f"Found {data['count']} cases.")
     
     if data['count'] > 0:
-        first_case_id = data['results'][0]['id']
-        print(f"\nTesting GetJawafdehiCaseTool (with sources) for case {first_case_id}...")
+        first_case = data['results'][0]
+        first_case_id = first_case['id']
+        first_case_slug = first_case.get('slug', '')
+        print(f"\nTesting GetJawafdehiCaseTool (with sources) for case {first_case_id} (slug={first_case_slug})...")
         get_tool = GetJawafdehiCaseTool()
-        res_get = await get_tool.execute({"case_id": first_case_id, "fetch_sources": True})
+        res_get = await get_tool.execute({"slug": first_case_slug, "fetch_sources": True})
         
         get_data = json.loads(res_get[0].text)
         print(f"Case Title: {get_data.get('title')}")
