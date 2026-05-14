@@ -21,6 +21,8 @@ markitdown = {extras = ["docx", "pdf", "pptx", "xlsx"], version = "^0.1.5"}
 likhit = {git = "https://github.com/Jawafdehi/likhit.git", rev = "main"}
 sentry-sdk = {extras = ["structlog"], version = "^2.47.0"}
 structlog = "^24.4.0"
+starlette = "^0.46.0"
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -31,6 +33,7 @@ flake8 = "^7.0.0"
 
 [tool.poetry.scripts]
 jawafdehi-mcp = "jawafdehi_mcp.server:main"
+jawafdehi-mcp-http = "jawafdehi_mcp.server:main_http"
 
 [tool.black]
 line-length = 88
@@ -39,6 +42,15 @@ target-version = ['py312']
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "flake8>=7.0.0",
+]
 
 [build-system]
 requires = ["poetry-core"]

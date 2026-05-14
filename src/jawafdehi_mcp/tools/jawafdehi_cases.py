@@ -8,6 +8,7 @@ import httpx
 import structlog
 from mcp.types import TextContent
 
+from ..request_context import get_forwarded_headers
 from .base import BaseTool
 
 logger = structlog.get_logger()
@@ -25,11 +26,13 @@ def _get_jawafdehi_api_token() -> str | None:
 
 
 def _get_auth_headers() -> dict[str, str]:
-    """Return Authorization header dict if a token is configured, else empty dict."""
+    """Return Authorization + forwarded identity headers."""
+    headers: dict[str, str] = {}
     token = _get_jawafdehi_api_token()
     if token:
-        return {"Authorization": f"Token {token}"}
-    return {}
+        headers["Authorization"] = f"Token {token}"
+    headers.update(get_forwarded_headers())
+    return headers
 
 
 def _json_text_content(payload: Any) -> list[TextContent]:
@@ -294,7 +297,7 @@ class CreateJawafdehiCaseTool(BaseTool):
             payload["description"] = arguments["description"]
 
         url = f"{_get_jawafdehi_base_url()}/api/cases/"
-        headers = {"Authorization": f"Token {token}"}
+        headers = _get_auth_headers()
 
         try:
             async with httpx.AsyncClient() as client:
@@ -382,7 +385,7 @@ class PatchJawafdehiCaseTool(BaseTool):
             )
 
         url = f"{_get_jawafdehi_base_url()}/api/cases/{case_id}/"
-        headers = {"Authorization": f"Token {token}"}
+        headers = _get_auth_headers()
 
         try:
             async with httpx.AsyncClient() as client:
@@ -486,7 +489,7 @@ class SubmitNESChangeTool(BaseTool):
 
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/submit_nes_change"
-        headers = {"Authorization": f"Token {token}"}
+        headers = _get_auth_headers()
 
         try:
             async with httpx.AsyncClient() as client:
@@ -556,11 +559,9 @@ class CreateJawafEntityTool(BaseTool):
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/entities/"
 
-        headers = {
-            "Authorization": f"Token {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
+        headers = _get_auth_headers()
+        headers["Content-Type"] = "application/json"
+        headers["Accept"] = "application/json"
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -655,10 +656,8 @@ class UploadDocumentSourceTool(BaseTool):
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/sources/"
 
-        headers = {
-            "Authorization": f"Token {token}",
-            "Accept": "application/json",
-        }
+        headers = _get_auth_headers()
+        headers["Accept"] = "application/json"
 
         data = {
             "title": arguments["title"],

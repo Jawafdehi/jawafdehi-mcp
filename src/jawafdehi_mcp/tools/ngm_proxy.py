@@ -7,6 +7,8 @@ from typing import Any
 import httpx
 import structlog
 
+from ..request_context import get_forwarded_headers
+
 logger = structlog.get_logger()
 
 
@@ -66,6 +68,7 @@ async def execute_ngm_proxy_query(
     headers: dict[str, str] = {}
     if token:
         headers["Authorization"] = f"Token {token}"
+    headers.update(get_forwarded_headers())
 
     response = await client.post(
         f"{base_url}/api/ngm/query_judicial",

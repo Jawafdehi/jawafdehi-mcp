@@ -129,7 +129,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
 
 def main():
-    """Run the MCP server."""
+    """Run the MCP server via stdio."""
     logger.info("server_starting")
 
     import asyncio
@@ -141,6 +141,13 @@ def main():
             )
 
     asyncio.run(run())
+
+
+def main_http():
+    """Run the MCP server via Streamable HTTP."""
+    from .http_server import main as _http_main
+
+    _http_main()
 
 
 if __name__ == "__main__":
