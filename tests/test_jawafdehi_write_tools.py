@@ -14,6 +14,8 @@ from jawafdehi_mcp.tools.jawafdehi_cases import (
     UploadDocumentSourceTool,
 )
 
+TEST_SLUG = "ciaa-081-cr-0123-sample-case-abc123"
+
 
 def _mock_async_client(response):
     client = AsyncMock()
@@ -129,7 +131,7 @@ class TestPatchJawafdehiCaseTool:
     def test_tool_metadata(self):
         assert self.tool.name == "patch_jawafdehi_case"
         assert "RFC 6902" in self.tool.description
-        assert self.tool.input_schema["required"] == ["case_id", "operations"]
+        assert self.tool.input_schema["required"] == ["slug", "operations"]
 
     @pytest.mark.asyncio
     async def test_requires_token(self, monkeypatch):
@@ -137,7 +139,7 @@ class TestPatchJawafdehiCaseTool:
 
         result = await self.tool.execute(
             {
-                "case_id": 3,
+                "slug": TEST_SLUG,
                 "operations": [{"op": "replace", "path": "/title", "value": "Updated"}],
             }
         )
@@ -148,7 +150,7 @@ class TestPatchJawafdehiCaseTool:
     async def test_requires_operations_list(self, monkeypatch):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
 
-        result = await self.tool.execute({"case_id": 3, "operations": {}})
+        result = await self.tool.execute({"slug": TEST_SLUG, "operations": {}})
 
         assert "operations must be a JSON Patch array" in result[0].text
 
@@ -166,14 +168,15 @@ class TestPatchJawafdehiCaseTool:
             "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
             return_value=context_manager,
         ):
-            result = await self.tool.execute({"case_id": 3, "operations": ops})
+            result = await self.tool.execute({"slug": TEST_SLUG, "operations": ops})
 
         payload = json.loads(result[0].text)
         assert payload["title"] == "Updated title"
         client.patch.assert_awaited_once()
-        _, kwargs = client.patch.await_args
+        args, kwargs = client.patch.await_args
         assert kwargs["headers"]["Authorization"] == "Token test-token"
         assert kwargs["json"] == ops
+        assert TEST_SLUG in args[0]
 
     @pytest.mark.asyncio
     async def test_patch_404_passthrough(self, monkeypatch):
@@ -191,7 +194,7 @@ class TestPatchJawafdehiCaseTool:
         ):
             result = await self.tool.execute(
                 {
-                    "case_id": 999,
+                    "slug": TEST_SLUG,
                     "operations": [{"op": "replace", "path": "/title", "value": "x"}],
                 }
             )
@@ -218,7 +221,7 @@ class TestPatchJawafdehiCaseTool:
         ):
             result = await self.tool.execute(
                 {
-                    "case_id": 3,
+                    "slug": TEST_SLUG,
                     "operations": [
                         {
                             "op": "replace",
