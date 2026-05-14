@@ -277,7 +277,7 @@ class CreateJawafdehiCaseTool(BaseTool):
                 },
                 "description": {
                     "type": "string",
-                    "description": "Optional full description.",
+                    "description": "Optional full description (Markdown).",
                 },
             },
             "required": ["title", "case_type"],
@@ -368,7 +368,7 @@ class PatchJawafdehiCaseTool(BaseTool):
                 },
                 "operations": {
                     "type": "array",
-                    "description": "RFC 6902 JSON Patch operations.",
+                    "description": "RFC 6902 JSON Patch operations. Use Markdown for /description values.",
                     "items": {
                         "type": "object",
                         "properties": {
