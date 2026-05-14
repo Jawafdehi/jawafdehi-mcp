@@ -55,9 +55,14 @@ class JawafdehiMCPServer:
         headers = dict(scope.get("headers", []))
         raw = headers.get(b"x-jawafdehi-user-id", b"").decode()
         uid = raw.strip()
+        token = None
         if uid:
-            jawafdehi_user_id.set(uid)
-        await self.session_manager.handle_request(scope, receive, send)
+            token = jawafdehi_user_id.set(uid)
+        try:
+            await self.session_manager.handle_request(scope, receive, send)
+        finally:
+            if token is not None:
+                jawafdehi_user_id.reset(token)
 
 
 app = JawafdehiMCPServer()

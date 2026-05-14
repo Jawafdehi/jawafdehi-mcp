@@ -43,6 +43,8 @@ target-version = ['py312']
 profile = "black"
 line_length = 88
 
+# PEP 735 dev dependency group (for UV/other tools). Mirrors [tool.poetry.group.dev.dependencies]
+# above so both Poetry and UV installers work without drift.
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
