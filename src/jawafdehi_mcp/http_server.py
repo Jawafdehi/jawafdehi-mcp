@@ -14,6 +14,7 @@ import os
 import structlog
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
+from .identity import current_user_identity, resolve_user_identity
 from .request_context import jawafdehi_user_id
 from .server import app as mcp_app
 
@@ -51,18 +52,24 @@ class JawafdehiMCPServer:
             await send({"type": "lifespan.shutdown.complete"})
 
     async def _handle_http(self, scope, receive, send):
-        """Extract user ID header, then delegate to the session manager."""
+        """Extract user ID header, resolve identity, then delegate."""
         headers = dict(scope.get("headers", []))
         raw = headers.get(b"x-jawafdehi-user-id", b"").decode()
         uid = raw.strip()
-        token = None
+        user_token = None
+        identity_token = None
         if uid:
-            token = jawafdehi_user_id.set(uid)
+            user_token = jawafdehi_user_id.set(uid)
+            identity = await resolve_user_identity(uid)
+            if identity:
+                identity_token = current_user_identity.set(identity)
         try:
             await self.session_manager.handle_request(scope, receive, send)
         finally:
-            if token is not None:
-                jawafdehi_user_id.reset(token)
+            if identity_token is not None:
+                current_user_identity.reset(identity_token)
+            if user_token is not None:
+                jawafdehi_user_id.reset(user_token)
 
 
 app = JawafdehiMCPServer()

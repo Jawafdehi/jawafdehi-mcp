@@ -10,6 +10,11 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from .identity import (
+    PUBLIC_READ_ONLY_TOOL_NAMES,
+    current_user_identity,
+    get_allowed_tool_names,
+)
 from .logging_setup import setup_logging
 
 setup_logging()
@@ -40,10 +45,8 @@ from .tools.nes import (  # noqa: E402
 
 logger = structlog.get_logger()
 
-# Initialize MCP server
 app = Server("jawafdehi-mcp")
 
-# Registry of available tools
 TOOLS: list[BaseTool] = [
     NGMJudicialTool(),
     NGMExtractCaseDataTool(),
@@ -65,49 +68,74 @@ TOOLS: list[BaseTool] = [
     DocumentConverterTool(),
 ]
 
-# Create tool name to instance mapping
 TOOL_MAP = {tool.name: tool for tool in TOOLS}
-
-# Public read-only tools available without JAWAFDEHI_API_TOKEN
-PUBLIC_READ_ONLY_TOOL_NAMES = {
-    "search_jawafdehi_cases",
-    "get_jawafdehi_case",
-    "search_jawaf_entities",
-    "get_jawaf_entity",
-    "search_nes_entities",
-    "get_nes_entities",
-    "get_nes_tags",
-    "get_nes_entity_prefixes",
-    "get_nes_entity_prefix_schema",
-    "ngm_query_judicial",
-    "convert_date",
-    "convert_to_markdown",
-}
+ALL_TOOL_NAMES: set[str] = set(TOOL_MAP.keys())
 
 
-def _is_public_mode() -> bool:
-    return not os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
+def _has_api_token() -> bool:
+    return bool(os.getenv("JAWAFDEHI_API_TOKEN", "").strip())
 
 
-def _get_available_tools() -> list[BaseTool]:
-    if _is_public_mode():
-        return [tool for tool in TOOLS if tool.name in PUBLIC_READ_ONLY_TOOL_NAMES]
-    return TOOLS
+def _get_allowed_tools() -> list[BaseTool]:
+    identity = current_user_identity.get()
+    if identity is not None:
+        allowed = get_allowed_tool_names(identity, ALL_TOOL_NAMES)
+        return [tool for tool in TOOLS if tool.name in allowed]
+
+    if _has_api_token():
+        return TOOLS
+
+    return [tool for tool in TOOLS if tool.name in PUBLIC_READ_ONLY_TOOL_NAMES]
+
+
+def _is_tool_allowed(name: str) -> bool:
+    identity = current_user_identity.get()
+    if identity is not None:
+        allowed = get_allowed_tool_names(identity, ALL_TOOL_NAMES)
+        return name in allowed
+
+    if _has_api_token():
+        return True
+
+    return name in PUBLIC_READ_ONLY_TOOL_NAMES
+
+
+def _bind_audit_context(identity: dict | None) -> None:
+    if identity:
+        structlog.contextvars.bind_contextvars(
+            jawafdehi_user_id=str(identity.get("user_id", "")),
+            jawafdehi_username=identity.get("username", ""),
+            jawafdehi_roles=identity.get("roles", []),
+        )
+
+
+def _unbind_audit_context() -> None:
+    structlog.contextvars.unbind_contextvars(
+        "jawafdehi_user_id",
+        "jawafdehi_username",
+        "jawafdehi_roles",
+    )
 
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
-    """List available MCP tools based on public/private profile."""
-    return [tool.to_tool() for tool in _get_available_tools()]
+    """List available MCP tools based on the current user's identity."""
+    return [tool.to_tool() for tool in _get_allowed_tools()]
 
 
 @app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
-    """Handle tool execution requests."""
-    if _is_public_mode() and name not in PUBLIC_READ_ONLY_TOOL_NAMES:
+    """Handle tool execution requests with per-user authorization."""
+    if not _is_tool_allowed(name):
+        identity = current_user_identity.get()
+        user_info = ""
+        if identity:
+            user_info = (
+                f" (user_id={identity.get('user_id')}, roles={identity.get('roles')})"
+            )
         raise ValueError(
-            f"Tool '{name}' is not available in public read-only mode. "
-            "Set JAWAFDEHI_API_TOKEN for full access."
+            f"Tool '{name}' is not available for the current user{user_info}. "
+            "Contact a caseworker for elevated access."
         )
 
     tool = TOOL_MAP.get(name)
@@ -115,8 +143,10 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         logger.error("unknown_tool_requested", tool_name=name)
         raise ValueError(f"Unknown tool: {name}")
 
+    identity = current_user_identity.get()
     request_id = str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(request_id=request_id)
+    _bind_audit_context(identity)
     logger.info("tool_call_started", tool_name=name)
     try:
         result = await tool.execute(arguments)
@@ -125,6 +155,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         logger.exception("tool_execution_failed", tool_name=name)
         raise
     finally:
+        _unbind_audit_context()
         structlog.contextvars.unbind_contextvars("request_id")
 
 
