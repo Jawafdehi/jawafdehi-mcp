@@ -32,7 +32,7 @@ PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
     "convert_to_markdown",
 }
 
-CASEWORKER_ROLE_NAMES: set[str] = {"Contributor"}
+CASEWORKER_ROLE_NAMES: set[str] = {"Contributor", "Admin", "Moderator"}
 
 
 def _get_jawafdehi_base_url() -> str:

@@ -24,11 +24,20 @@ class TestRoleHasWriteAccess:
     def test_non_caseworker_roles_no_access(self):
         assert role_has_write_access(["Viewer", "Editor"]) is False
 
+    def test_admin_role_has_access(self):
+        assert role_has_write_access(["Admin"]) is True
+
+    def test_moderator_role_has_access(self):
+        assert role_has_write_access(["Moderator"]) is True
+
     def test_nonexistent_role_no_access(self):
         assert role_has_write_access(["Administrator"]) is False
 
-    def test_caseworker_role_names_contains_contributor(self):
+    def test_caseworker_role_names_contains_expected_roles(self):
         assert "Contributor" in CASEWORKER_ROLE_NAMES
+        assert "Admin" in CASEWORKER_ROLE_NAMES
+        assert "Moderator" in CASEWORKER_ROLE_NAMES
+        assert len(CASEWORKER_ROLE_NAMES) == 3
 
 
 class TestGetAllowedToolNames:
