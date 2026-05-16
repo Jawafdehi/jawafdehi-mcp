@@ -215,9 +215,7 @@ class TestToolFilteringEndToEnd:
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
         monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
 
-        from jawafdehi_mcp.identity import (
-            PUBLIC_READ_ONLY_TOOL_NAMES,
-        )
+        from jawafdehi_mcp.identity import PUBLIC_READ_ONLY_TOOL_NAMES
         from jawafdehi_mcp.identity import current_user_identity as cid
         from jawafdehi_mcp.server import _get_allowed_tools
 
