@@ -65,6 +65,7 @@ async def resolve_user_identity(user_id: str) -> dict | None:
         async with httpx.AsyncClient() as client:
             headers = {
                 "Authorization": f"Token {token}",
+                "X-Jawafdehi-User-Id": user_id,
             }
             headers.update(get_forwarded_headers())
             response = await client.get(
