@@ -15,7 +15,7 @@ import structlog
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from .identity import current_user_identity, resolve_user_identity
-from .request_context import jawafdehi_user_id
+from .request_context import jawafdehi_user_id, jawafdehi_user_name
 from .server import app as mcp_app
 
 logger = structlog.get_logger()
@@ -23,7 +23,7 @@ logger = structlog.get_logger()
 
 class JawafdehiMCPServer:
     """Minimal ASGI app wrapping StreamableHTTPSessionManager with
-    X-Jawafdehi-User-Id header capture."""
+    X-Jawafdehi-User-Id and X-Jawafdehi-User-Name header capture."""
 
     def __init__(self) -> None:
         self.session_manager = StreamableHTTPSessionManager(
@@ -52,24 +52,32 @@ class JawafdehiMCPServer:
             await send({"type": "lifespan.shutdown.complete"})
 
     async def _handle_http(self, scope, receive, send):
-        """Extract user ID header, resolve identity, then delegate."""
+        """Extract user ID and user name headers, resolve identity, then delegate."""
         headers = dict(scope.get("headers", []))
-        raw = headers.get(b"x-jawafdehi-user-id", b"").decode()
-        uid = raw.strip()
-        user_token = None
+        raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode()
+        uid = raw_id.strip()
+        raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode()
+        uname = raw_name.strip()
+        id_token = None
+        name_token = None
         identity_token = None
         if uid:
-            user_token = jawafdehi_user_id.set(uid)
+            id_token = jawafdehi_user_id.set(uid)
+        if uname:
+            name_token = jawafdehi_user_name.set(uname)
+        if uid:
             identity = await resolve_user_identity(uid)
             if identity:
                 identity_token = current_user_identity.set(identity)
         try:
             await self.session_manager.handle_request(scope, receive, send)
         finally:
+            if name_token is not None:
+                jawafdehi_user_name.reset(name_token)
             if identity_token is not None:
                 current_user_identity.reset(identity_token)
-            if user_token is not None:
-                jawafdehi_user_id.reset(user_token)
+            if id_token is not None:
+                jawafdehi_user_id.reset(id_token)
 
 
 app = JawafdehiMCPServer()

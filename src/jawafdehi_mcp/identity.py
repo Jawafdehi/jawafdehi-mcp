@@ -11,6 +11,8 @@ from contextvars import ContextVar
 import httpx
 import structlog
 
+from .request_context import get_forwarded_headers
+
 logger = structlog.get_logger()
 
 current_user_identity: ContextVar[dict | None] = ContextVar(
@@ -61,12 +63,14 @@ async def resolve_user_identity(user_id: str) -> dict | None:
 
     try:
         async with httpx.AsyncClient() as client:
+            headers = {
+                "Authorization": f"Token {token}",
+                "X-Jawafdehi-User-Id": user_id,
+            }
+            headers.update(get_forwarded_headers())
             response = await client.get(
                 url,
-                headers={
-                    "Authorization": f"Token {token}",
-                    "X-Jawafdehi-User-Id": user_id,
-                },
+                headers=headers,
                 timeout=10,
             )
             response.raise_for_status()
