@@ -63,11 +63,12 @@ class JawafdehiMCPServer:
         identity_token = None
         if uid:
             id_token = jawafdehi_user_id.set(uid)
+        if uname:
+            name_token = jawafdehi_user_name.set(uname)
+        if uid:
             identity = await resolve_user_identity(uid)
             if identity:
                 identity_token = current_user_identity.set(identity)
-        if uname:
-            name_token = jawafdehi_user_name.set(uname)
         try:
             await self.session_manager.handle_request(scope, receive, send)
         finally:
