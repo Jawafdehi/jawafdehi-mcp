@@ -1,4 +1,4 @@
-"""Logging setup for jawafdehi-mcp — structlog + optional Sentry integration."""
+"""Logging setup for jawafdehi-mcp — structlog + optional Sentry + optional GCP Cloud Logging."""
 
 import logging
 import os
@@ -38,6 +38,22 @@ def _init_sentry() -> None:
         )
     except Exception:
         print("Failed to initialize Sentry SDK", file=sys.stderr)
+
+
+def _init_gcp_logging() -> None:
+    gcp_project = os.getenv("GCP_LOG_PROJECT", "").strip()
+    if not gcp_project:
+        return
+
+    try:
+        import google.cloud.logging
+
+        client = google.cloud.logging.Client(project=gcp_project)
+        client.setup_logging(
+            log_level=_resolve_log_level(os.getenv("LOG_LEVEL", "INFO")),
+        )
+    except Exception:
+        print("Failed to initialize GCP Cloud Logging", file=sys.stderr)
 
 
 def _resolve_log_level(level_name: str) -> int:
@@ -92,3 +108,5 @@ def setup_logging() -> None:
     root_logger = logging.getLogger()
     root_logger.handlers = [handler]
     root_logger.setLevel(_resolve_log_level(os.getenv("LOG_LEVEL", "INFO")))
+
+    _init_gcp_logging()

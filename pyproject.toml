@@ -20,6 +20,7 @@ nepali-datetime = "^1.0.8.4"
 markitdown = {extras = ["docx", "pdf", "pptx", "xlsx"], version = "^0.1.5"}
 likhit = {git = "https://github.com/Jawafdehi/likhit.git", rev = "main"}
 sentry-sdk = {extras = ["structlog"], version = "^2.47.0"}
+google-cloud-logging = "^3.12.0"
 structlog = "^24.4.0"
 starlette = "^0.46.0"
 uvicorn = {extras = ["standard"], version = "^0.34.0"}
