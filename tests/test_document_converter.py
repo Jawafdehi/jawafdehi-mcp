@@ -408,6 +408,4 @@ class TestDocumentConverterTool:
             result = await self.tool.execute({"file_path": str(pdf_file)})
 
         assert len(result) == 1
-        mock_converter.convert_uri.assert_called_once_with(
-            pdf_file.resolve().as_uri()
-        )
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())

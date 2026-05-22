@@ -41,7 +41,7 @@ class DocumentConverterTool(BaseTool):
             "- Set `output_path` to save the converted Markdown to a file instead\n\n"
             "**Page selection (PDFs only):**\n"
             "- Use `pages` to convert a subset of pages from a PDF\n"
-            "- Format: single page (\"5\") or page range (\"1-3\")\n"
+            '- Format: single page ("5") or page range ("1-3")\n'
             "- Page numbers are 1-based and inclusive\n"
             "- Works with the `likhit` plugin for Nepali PDFs\n\n"
             "Set `enable_plugins=false` only to bypass MarkItDown plugins for "
@@ -82,6 +82,7 @@ class DocumentConverterTool(BaseTool):
                 },
                 "pages": {
                     "type": "string",
+                    "pattern": r"^\d+(?:-\d+)?$",
                     "description": (
                         "Optional. Convert only a subset of pages from a PDF. "
                         'Format: single page number ("5") or page range '
