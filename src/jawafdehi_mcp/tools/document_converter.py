@@ -166,9 +166,7 @@ class DocumentConverterTool(BaseTool):
                 if "-" in pages:
                     start_page, end_page = map(int, pages.split("-", 1))
                     if start_page > end_page:
-                        raise ValueError(
-                            "Invalid 'pages' range: start must be <= end."
-                        )
+                        raise ValueError("Invalid 'pages' range: start must be <= end.")
                 kwargs["pages"] = pages
 
             result = converter.convert_uri(source, **kwargs)
