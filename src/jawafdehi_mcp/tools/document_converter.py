@@ -82,7 +82,7 @@ class DocumentConverterTool(BaseTool):
                 },
                 "pages": {
                     "type": "string",
-                    "pattern": r"^\d+(?:-\d+)?$",
+                    "pattern": r"^[1-9]\d*(?:-[1-9]\d*)?$",
                     "description": (
                         "Optional. Convert only a subset of pages from a PDF. "
                         'Format: single page number ("5") or page range '
@@ -163,6 +163,12 @@ class DocumentConverterTool(BaseTool):
             kwargs: dict[str, Any] = {}
             pages = arguments.get("pages")
             if pages:
+                if "-" in pages:
+                    start_page, end_page = map(int, pages.split("-", 1))
+                    if start_page > end_page:
+                        raise ValueError(
+                            "Invalid 'pages' range: start must be <= end."
+                        )
                 kwargs["pages"] = pages
 
             result = converter.convert_uri(source, **kwargs)
