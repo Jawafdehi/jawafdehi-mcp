@@ -39,6 +39,11 @@ class DocumentConverterTool(BaseTool):
             "**Output behavior:**\n"
             "- Returns Markdown directly by default\n"
             "- Set `output_path` to save the converted Markdown to a file instead\n\n"
+            "**Page selection (PDFs only):**\n"
+            "- Use `pages` to convert a subset of pages from a PDF\n"
+            '- Format: single page ("5") or page range ("1-3")\n'
+            "- Page numbers are 1-based and inclusive\n"
+            "- Works with the `likhit` plugin for Nepali PDFs\n\n"
             "Set `enable_plugins=false` only to bypass MarkItDown plugins for "
             "compatibility or troubleshooting."
         )
@@ -73,6 +78,17 @@ class DocumentConverterTool(BaseTool):
                         "Optional. Absolute path to write the converted Markdown file. "
                         "Parent directories are created automatically. "
                         "If not provided, the markdown content is returned directly."
+                    ),
+                },
+                "pages": {
+                    "type": "string",
+                    "pattern": r"^[1-9]\d*(?:-[1-9]\d*)?$",
+                    "description": (
+                        "Optional. Convert only a subset of pages from a PDF. "
+                        'Format: single page number ("5") or page range '
+                        '("1-3"). Page numbers are 1-based and inclusive. '
+                        "Only effective for PDF files. "
+                        "Supported by the likhit plugin for Nepali PDFs."
                     ),
                 },
                 "enable_plugins": {
@@ -143,7 +159,17 @@ class DocumentConverterTool(BaseTool):
 
             enable_plugins = arguments.get("enable_plugins", True)
             converter = MarkItDown(enable_plugins=enable_plugins)
-            result = converter.convert_uri(source)
+
+            kwargs: dict[str, Any] = {}
+            pages = arguments.get("pages")
+            if pages:
+                if "-" in pages:
+                    start_page, end_page = map(int, pages.split("-", 1))
+                    if start_page > end_page:
+                        raise ValueError("Invalid 'pages' range: start must be <= end.")
+                kwargs["pages"] = pages
+
+            result = converter.convert_uri(source, **kwargs)
             return result.markdown, None
         except Exception as e:
             logger.error(

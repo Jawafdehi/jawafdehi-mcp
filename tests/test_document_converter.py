@@ -27,6 +27,7 @@ class TestDocumentConverterTool:
             "file_path",
             "uri",
             "output_path",
+            "pages",
             "enable_plugins",
         ]
         for field in expected_fields:
@@ -363,3 +364,48 @@ class TestDocumentConverterTool:
 
         assert len(result) == 1
         assert "Unsupported file URI" in result[0].text
+
+    @pytest.mark.asyncio
+    async def test_pages_kwarg_passed_to_convert_uri(self, tmp_path):
+        """Pages parameter should be passed through to MarkItDown as a kwarg."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 fake content")
+
+        mock_result = MagicMock()
+        mock_result.markdown = "# First page\n"
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+            result = await self.tool.execute(
+                {"file_path": str(pdf_file), "pages": "1-3"}
+            )
+
+        assert len(result) == 1
+        assert "MarkItDown + plugins" in result[0].text
+        mock_converter.convert_uri.assert_called_once_with(
+            pdf_file.resolve().as_uri(), pages="1-3"
+        )
+
+    @pytest.mark.asyncio
+    async def test_pages_not_passed_when_omitted(self, tmp_path):
+        """When pages is not provided, convert_uri should be called without it."""
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 fake content")
+
+        mock_result = MagicMock()
+        mock_result.markdown = "# All pages\n"
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            mock_converter = MagicMock()
+            mock_converter.convert_uri.return_value = mock_result
+            mock_markitdown.return_value = mock_converter
+            result = await self.tool.execute({"file_path": str(pdf_file)})
+
+        assert len(result) == 1
+        mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
