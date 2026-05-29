@@ -10,6 +10,9 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 ARG UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
+# uv sync needs git for git dependencies (likhit)
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
