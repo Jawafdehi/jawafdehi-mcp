@@ -23,6 +23,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim-bookworm AS runtime
 
+WORKDIR /app
+
 RUN groupadd --system --gid 1000 mcp && \
     useradd --system --uid 1000 --gid mcp --create-home mcp
 
@@ -39,6 +41,6 @@ USER mcp
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+    CMD python -c "import os, urllib.request; port = os.getenv('HTTP_PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/health')" || exit 1
 
 CMD ["jawafdehi-mcp-http"]

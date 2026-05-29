@@ -67,6 +67,7 @@ class JawafdehiMCPServer:
         """Extract user ID and user name headers, resolve identity, then delegate."""
         path = scope.get("path", "")
         if path == "/health":
+            await receive()
             await self._send_response(send, 200, [("content-type", "text/plain")])
             return
         headers = dict(scope.get("headers", []))
