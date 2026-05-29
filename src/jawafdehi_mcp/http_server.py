@@ -39,15 +39,19 @@ class JawafdehiMCPServer:
 
     @staticmethod
     async def _send_response(send, status_code, headers):
-        await send({
-            "type": "http.response.start",
-            "status": status_code,
-            "headers": [(k.encode(), v.encode()) for k, v in headers],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": b"",
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status_code,
+                "headers": [(k.encode(), v.encode()) for k, v in headers],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"",
+            }
+        )
 
     async def _handle_lifespan(self, scope, receive, send):
         """Handle ASGI lifespan protocol."""
