@@ -37,6 +37,18 @@ class JawafdehiMCPServer:
         elif scope["type"] == "http":
             await self._handle_http(scope, receive, send)
 
+    @staticmethod
+    async def _send_response(send, status_code, headers):
+        await send({
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": [(k.encode(), v.encode()) for k, v in headers],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b"",
+        })
+
     async def _handle_lifespan(self, scope, receive, send):
         """Handle ASGI lifespan protocol."""
         message = await receive()
@@ -53,6 +65,10 @@ class JawafdehiMCPServer:
 
     async def _handle_http(self, scope, receive, send):
         """Extract user ID and user name headers, resolve identity, then delegate."""
+        path = scope.get("path", "")
+        if path == "/health":
+            await self._send_response(send, 200, [("content-type", "text/plain")])
+            return
         headers = dict(scope.get("headers", []))
         raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode()
         uid = raw_id.strip()
