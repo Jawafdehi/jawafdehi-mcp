@@ -26,10 +26,19 @@ def _sentry_processor(logger, method_name, event_dict):
 
         scope = sentry_sdk.get_current_scope()
         if scope:
-            exclude = {"event", "level", "timestamp", "logger", "exception", "stack_info"}
+            exclude = {
+                "event",
+                "level",
+                "timestamp",
+                "logger",
+                "exception",
+                "stack_info",
+            }
             for key, value in event_dict.items():
                 if key not in exclude:
-                    scope.set_context("structlog", {**scope.contexts.get("structlog", {}), key: value})
+                    scope.set_context(
+                        "structlog", {**scope.contexts.get("structlog", {}), key: value}
+                    )
     except Exception:
         pass
     return event_dict
