@@ -24,7 +24,6 @@ def _init_sentry() -> None:
 
     try:
         import sentry_sdk
-        from sentry_sdk.integrations.structlog import StructlogIntegration
 
         sentry_sdk.init(
             dsn=sentry_dsn,
@@ -32,9 +31,6 @@ def _init_sentry() -> None:
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
             profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
             release=os.getenv("SENTRY_RELEASE", f"{SERVICE_NAME}@{_get_version()}"),
-            integrations=[
-                StructlogIntegration(),
-            ],
         )
     except Exception:
         print("Failed to initialize Sentry SDK", file=sys.stderr)
