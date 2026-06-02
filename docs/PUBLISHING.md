@@ -73,4 +73,3 @@ If publishing fails at the final PyPI upload step, check these first:
 PyPI documentation:
 
 - `https://docs.pypi.org/trusted-publishers/using-a-publisher/`
-
