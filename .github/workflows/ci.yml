@@ -15,8 +15,8 @@ jobs:
         id: setup
         uses: ./.github/actions/setup-poetry-python
 
-      - name: Check formatting
-        run: ./scripts/format.sh --check
+      - name: Run pre-commit hooks
+        run: poetry run pre-commit run --all-files
 
       - name: Run tests
         run: poetry run pytest -v --tb=short
