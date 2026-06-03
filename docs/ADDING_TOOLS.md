@@ -63,19 +63,19 @@ class MyNewTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         """
         Execute the tool logic.
-        
+
         Args:
             arguments: Dictionary of input parameters
-            
+
         Returns:
             List of TextContent responses
         """
         param1 = arguments.get("param1")
         param2 = arguments.get("param2", 10)
-        
+
         # Your tool logic here
         result = f"Processed {param1} with {param2}"
-        
+
         return [TextContent(type="text", text=result)]
 ```
 
@@ -122,9 +122,9 @@ from jawafdehi_mcp.tools.my_new_tool import MyNewTool
 async def test_my_new_tool():
     """Test basic functionality."""
     tool = MyNewTool()
-    
+
     result = await tool.execute({"param1": "test"})
-    
+
     assert len(result) == 1
     assert "test" in result[0].text
 ```
@@ -177,13 +177,13 @@ Validate inputs before processing:
 async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
     """Execute with validation."""
     param = arguments.get("param")
-    
+
     if not param:
         return [TextContent(type="text", text="Error: param is required")]
-    
+
     if not isinstance(param, str):
         return [TextContent(type="text", text="Error: param must be a string")]
-    
+
     # Process validated input
     ...
 ```

@@ -70,7 +70,7 @@ ORDER BY court_type, identifier
 #### 2. Search corruption cases
 
 ```sql
-SELECT 
+SELECT
   case_number,
   case_type,
   plaintiff,
@@ -85,7 +85,7 @@ LIMIT 20
 #### 3. Get case hearing history
 
 ```sql
-SELECT 
+SELECT
   cc.case_number,
   cc.case_type,
   co.full_name_nepali as court_name,
@@ -94,8 +94,8 @@ SELECT
   MAX(cch.hearing_date_ad) as last_hearing
 FROM court_cases cc
 JOIN courts co ON cc.court_identifier = co.identifier
-LEFT JOIN court_case_hearings cch 
-  ON cc.case_number = cch.case_number 
+LEFT JOIN court_case_hearings cch
+  ON cc.case_number = cch.case_number
   AND cc.court_identifier = cch.court_identifier
 WHERE cc.case_type LIKE '%भ्रष्टाचार%'
 GROUP BY cc.case_number, cc.case_type, co.full_name_nepali
@@ -107,7 +107,7 @@ LIMIT 10
 #### 4. Search cases by party name
 
 ```sql
-SELECT 
+SELECT
   case_number,
   case_type,
   plaintiff,
@@ -123,7 +123,7 @@ LIMIT 20
 #### 5. Get judge statistics
 
 ```sql
-SELECT 
+SELECT
   judge_names,
   COUNT(*) as hearing_count,
   COUNT(DISTINCT case_number) as unique_cases
