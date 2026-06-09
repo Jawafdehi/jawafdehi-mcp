@@ -1,6 +1,7 @@
 """NGM judicial data query tool."""
 
 import json
+import os
 import re
 from typing import Any
 
@@ -14,6 +15,18 @@ from .ngm_proxy import execute_ngm_proxy_query, get_jawafdehi_api_config
 logger = structlog.get_logger()
 
 # Allowed tables (excluding scraped_dates)
+
+
+def _get_max_query_timeout() -> float:
+    """Return max allowed query timeout in seconds (env MCP_QUERY_TIMEOUT, default 15)."""
+    raw = os.getenv("MCP_QUERY_TIMEOUT", "15")
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning("invalid_mcp_query_timeout", value=raw)
+        return 15.0
+
+
 ALLOWED_TABLES = {
     "courts",
     "court_cases",
@@ -150,7 +163,7 @@ Court IDs (court_identifier):
                 '"error": "timeout must be greater than 0", "query_time_ms": 0}'
             )
             return [TextContent(type="text", text=error_response)]
-        timeout = min(timeout, 15.0)
+        timeout = min(timeout, _get_max_query_timeout())
 
         if not query:
             error_response = (

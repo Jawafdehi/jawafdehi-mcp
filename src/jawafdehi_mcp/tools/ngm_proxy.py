@@ -57,6 +57,16 @@ def sql_quote(value: str) -> str:
     return value.replace("'", "''")
 
 
+def _get_proxy_http_timeout() -> float:
+    """Return the HTTP call timeout for proxy requests (env MCP_PROXY_HTTP_TIMEOUT, default 30s)."""
+    raw = os.getenv("MCP_PROXY_HTTP_TIMEOUT", "30.0")
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning("invalid_mcp_proxy_http_timeout", value=raw)
+        return 30.0
+
+
 async def execute_ngm_proxy_query(
     client: httpx.AsyncClient,
     base_url: str,
@@ -74,7 +84,7 @@ async def execute_ngm_proxy_query(
         f"{base_url}/api/ngm/query_judicial",
         json={"query": query, "timeout": timeout},
         headers=headers,
-        timeout=30.0,
+        timeout=_get_proxy_http_timeout(),
     )
 
     try:
