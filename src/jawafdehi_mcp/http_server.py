@@ -62,7 +62,9 @@ def extract_identity(headers: dict[bytes, bytes]) -> tuple[str | None, str | Non
         return uid, uname
 
     raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode(errors="replace").strip()
-    raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode(errors="replace").strip()
+    raw_name = (
+        headers.get(b"x-jawafdehi-user-name", b"").decode(errors="replace").strip()
+    )
     return (raw_id or None), (raw_name or None)
 
 
