@@ -34,7 +34,23 @@ PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
     "convert_to_markdown",
 }
 
-CASEWORKER_ROLE_NAMES: set[str] = {"Contributor", "Admin", "Moderator"}
+_DEFAULT_WRITE_ROLES = ("Contributor", "Admin", "Moderator")
+
+
+def _write_role_names() -> set[str]:
+    """Roles that grant write-tool access.
+
+    Configurable via MCP_WRITE_ROLES (comma-separated) so new Zitadel/Django
+    roles can be granted write access without a code change. Falls back to the
+    default caseworker roles when unset.
+    """
+    raw = (os.getenv("MCP_WRITE_ROLES") or "").strip()
+    if not raw:
+        return set(_DEFAULT_WRITE_ROLES)
+    return {role.strip() for role in raw.split(",") if role.strip()}
+
+
+CASEWORKER_ROLE_NAMES: set[str] = _write_role_names()
 
 
 def _get_jawafdehi_base_url() -> str:
@@ -88,8 +104,13 @@ async def resolve_user_identity(user_id: str) -> dict | None:
 
 
 def role_has_write_access(roles: list[str]) -> bool:
-    """Return True if any of the given roles grants write-tool access."""
-    return any(role in CASEWORKER_ROLE_NAMES for role in roles)
+    """Return True if any of the given roles grants write-tool access.
+
+    Reads MCP_WRITE_ROLES at call time so configuration changes take effect
+    without re-importing the module.
+    """
+    write_roles = _write_role_names()
+    return any(role in write_roles for role in roles)
 
 
 def get_allowed_tool_names(identity: dict | None, all_tool_names: set[str]) -> set[str]:
