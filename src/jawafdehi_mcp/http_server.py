@@ -34,6 +34,7 @@ def _decode_owui_jwt(token: str, secret: str) -> dict | None:
             algorithms=["HS256"],
             issuer=OWUI_JWT_ISSUER,
             options={"require": ["exp", "sub"]},
+            leeway=10,
         )
     except jwt.InvalidTokenError:
         return None
@@ -49,7 +50,7 @@ def extract_identity(headers: dict[bytes, bytes]) -> tuple[str | None, str | Non
     """
     secret = (os.getenv("OWUI_USER_JWT_SECRET") or "").strip()
     if secret:
-        raw = headers.get(OWUI_JWT_HEADER, b"").decode().strip()
+        raw = headers.get(OWUI_JWT_HEADER, b"").decode(errors="replace").strip()
         if not raw:
             return None, None
         payload = _decode_owui_jwt(raw, secret)
@@ -60,8 +61,8 @@ def extract_identity(headers: dict[bytes, bytes]) -> tuple[str | None, str | Non
         uname = str(payload.get("name") or "").strip() or None
         return uid, uname
 
-    raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode().strip()
-    raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode().strip()
+    raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode(errors="replace").strip()
+    raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode(errors="replace").strip()
     return (raw_id or None), (raw_name or None)
 
 

@@ -104,8 +104,13 @@ async def resolve_user_identity(user_id: str) -> dict | None:
 
 
 def role_has_write_access(roles: list[str]) -> bool:
-    """Return True if any of the given roles grants write-tool access."""
-    return any(role in CASEWORKER_ROLE_NAMES for role in roles)
+    """Return True if any of the given roles grants write-tool access.
+
+    Reads MCP_WRITE_ROLES at call time so configuration changes take effect
+    without re-importing the module.
+    """
+    write_roles = _write_role_names()
+    return any(role in write_roles for role in roles)
 
 
 def get_allowed_tool_names(identity: dict | None, all_tool_names: set[str]) -> set[str]:
