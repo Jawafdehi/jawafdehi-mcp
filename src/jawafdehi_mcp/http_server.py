@@ -11,6 +11,7 @@ Usage:
 
 import os
 
+import jwt
 import structlog
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
@@ -20,10 +21,53 @@ from .server import app as mcp_app
 
 logger = structlog.get_logger()
 
+OWUI_JWT_HEADER = b"x-openwebui-user-jwt"
+OWUI_JWT_ISSUER = "open-webui"
+
+
+def _decode_owui_jwt(token: str, secret: str) -> dict | None:
+    """Verify Open WebUI's HS256 user-info JWT; return its claims or None."""
+    try:
+        return jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            issuer=OWUI_JWT_ISSUER,
+            options={"require": ["exp", "sub"]},
+        )
+    except jwt.InvalidTokenError:
+        return None
+
+
+def extract_identity(headers: dict[bytes, bytes]) -> tuple[str | None, str | None]:
+    """Resolve (user_id, user_name) for the request.
+
+    When OWUI_USER_JWT_SECRET is set, trust ONLY the signed X-OpenWebUI-User-Jwt
+    that stock Open WebUI mints (sub = OWUI user id); the legacy plaintext
+    X-Jawafdehi-User-* headers are spoofable and ignored. Without the secret
+    (local dev), fall back to the legacy plaintext headers.
+    """
+    secret = (os.getenv("OWUI_USER_JWT_SECRET") or "").strip()
+    if secret:
+        raw = headers.get(OWUI_JWT_HEADER, b"").decode().strip()
+        if not raw:
+            return None, None
+        payload = _decode_owui_jwt(raw, secret)
+        if payload is None:
+            logger.warning("owui_jwt_verification_failed")
+            return None, None
+        uid = str(payload.get("sub") or "").strip() or None
+        uname = str(payload.get("name") or "").strip() or None
+        return uid, uname
+
+    raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode().strip()
+    raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode().strip()
+    return (raw_id or None), (raw_name or None)
+
 
 class JawafdehiMCPServer:
     """Minimal ASGI app wrapping StreamableHTTPSessionManager with
-    X-Jawafdehi-User-Id and X-Jawafdehi-User-Name header capture."""
+    per-request user identity capture (see extract_identity)."""
 
     def __init__(self) -> None:
         self.session_manager = StreamableHTTPSessionManager(
@@ -68,17 +112,14 @@ class JawafdehiMCPServer:
             await send({"type": "lifespan.shutdown.complete"})
 
     async def _handle_http(self, scope, receive, send):
-        """Extract user ID and user name headers, resolve identity, then delegate."""
+        """Resolve the request's user identity, resolve roles, then delegate."""
         path = scope.get("path", "")
         if path == "/health":
             await receive()
             await self._send_response(send, 200, [("content-type", "text/plain")])
             return
         headers = dict(scope.get("headers", []))
-        raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode()
-        uid = raw_id.strip()
-        raw_name = headers.get(b"x-jawafdehi-user-name", b"").decode()
-        uname = raw_name.strip()
+        uid, uname = extract_identity(headers)
         id_token = None
         name_token = None
         identity_token = None

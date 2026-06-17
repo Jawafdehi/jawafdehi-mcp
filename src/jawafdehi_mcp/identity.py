@@ -34,7 +34,23 @@ PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
     "convert_to_markdown",
 }
 
-CASEWORKER_ROLE_NAMES: set[str] = {"Contributor", "Admin", "Moderator"}
+_DEFAULT_WRITE_ROLES = ("Contributor", "Admin", "Moderator")
+
+
+def _write_role_names() -> set[str]:
+    """Roles that grant write-tool access.
+
+    Configurable via MCP_WRITE_ROLES (comma-separated) so new Zitadel/Django
+    roles can be granted write access without a code change. Falls back to the
+    default caseworker roles when unset.
+    """
+    raw = (os.getenv("MCP_WRITE_ROLES") or "").strip()
+    if not raw:
+        return set(_DEFAULT_WRITE_ROLES)
+    return {role.strip() for role in raw.split(",") if role.strip()}
+
+
+CASEWORKER_ROLE_NAMES: set[str] = _write_role_names()
 
 
 def _get_jawafdehi_base_url() -> str:
