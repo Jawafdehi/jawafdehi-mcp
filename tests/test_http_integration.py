@@ -1,97 +1,30 @@
-"""Integration tests for the jawafdehi-mcp HTTP server.
+"""Integration tests for the jawafdehi-mcp HTTP server bearer auth.
 
-Tests identity resolution against a live mock Jawafdehi API server,
-ContextVar lifecycle in the HTTP middleware, and end-to-end tool filtering.
+Exercises the ASGI middleware: bearer extraction, OIDC verification (mocked),
+ContextVar lifecycle, 401 on bad tokens, anonymous fallback, and the health /
+protected-resource-metadata endpoints.
 """
 
-import asyncio
-import contextlib
-import socket
+import json
 
 import pytest
-import pytest_asyncio
-import uvicorn
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
-from jawafdehi_mcp.http_server import JawafdehiMCPServer
-from jawafdehi_mcp.identity import current_user_identity
-from jawafdehi_mcp.request_context import jawafdehi_user_id
-
-pytestmark = pytest.mark.asyncio(loop_scope="function")
-
-
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-async def _mock_me_endpoint(request):
-    user_id = request.headers.get("x-jawafdehi-user-id", "")
-    auth = request.headers.get("authorization", "")
-
-    if not auth or auth != "Token test-integration-token":
-        return JSONResponse({"error": "unauthorized"}, status_code=401)
-
-    if user_id == "owui-cw-1":
-        return JSONResponse(
-            {"user_id": 1, "username": "caseworker1", "roles": ["Contributor"]}
-        )
-    elif user_id == "owui-admin-1":
-        return JSONResponse({"user_id": 2, "username": "admin1", "roles": ["Admin"]})
-    elif user_id == "owui-mod-1":
-        return JSONResponse({"user_id": 3, "username": "mod1", "roles": ["Moderator"]})
-    elif user_id == "owui-pub-1":
-        return JSONResponse({"user_id": 4, "username": "public1", "roles": []})
-    elif user_id == "owui-error-1":
-        return JSONResponse({"error": "not found"}, status_code=404)
-    else:
-        return JSONResponse({"user_id": 5, "username": user_id, "roles": []})
-
-
-mock_api_app = Starlette(
-    routes=[Route("/api/caseworker/me", _mock_me_endpoint, methods=["GET"])],
+from jawafdehi_mcp import http_server
+from jawafdehi_mcp.http_server import (
+    JawafdehiMCPServer,
+    _bearer_from_headers,
+    _protected_resource_metadata,
 )
+from jawafdehi_mcp.identity import current_user_identity
+from jawafdehi_mcp.oidc import OIDCError
+from jawafdehi_mcp.request_context import jawafdehi_bearer_token
 
 
-@pytest_asyncio.fixture
-async def mock_api_url():
-    port = _find_free_port()
-    config = uvicorn.Config(
-        mock_api_app, host="127.0.0.1", port=port, log_level="error"
-    )
-    server = uvicorn.Server(config)
-    task = asyncio.ensure_future(server.serve())
-    await asyncio.sleep(0.15)
-    url = f"http://127.0.0.1:{port}"
-    yield url
-    server.should_exit = True
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
-
-
-@pytest_asyncio.fixture
-async def mcp_server(mock_api_url, monkeypatch):
-    monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-    monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-    mcp = JawafdehiMCPServer()
-    ctx = mcp.session_manager.run()
-    await ctx.__aenter__()
-    yield mcp
-    try:
-        await ctx.__aexit__(None, None, None)
-    except RuntimeError:
-        pass
-
-
-def _make_scope(headers=None):
+def _make_scope(headers=None, path="/"):
     return {
         "type": "http",
         "method": "POST",
-        "path": "/",
+        "path": path,
         "http_version": "1.1",
         "headers": headers or [],
         "query_string": b"",
@@ -104,157 +37,121 @@ async def _dummy_receive():
     return {"type": "http.disconnect"}
 
 
-class TestHttpServerMiddleware:
-    async def test_caseworker_identity_resolved(self, mcp_server):
-        scope = _make_scope([(b"x-jawafdehi-user-id", b"owui-cw-1")])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
+class _SendRecorder:
+    def __init__(self):
+        self.messages = []
+
+    async def __call__(self, message):
+        self.messages.append(message)
+
+    @property
+    def status(self):
+        for m in self.messages:
+            if m["type"] == "http.response.start":
+                return m["status"]
+        return None
+
+    @property
+    def body(self):
+        for m in self.messages:
+            if m["type"] == "http.response.body":
+                return m["body"]
+        return b""
+
+
+@pytest.fixture
+def mcp_server():
+    return JawafdehiMCPServer()
+
+
+@pytest.fixture
+def captured(mcp_server, monkeypatch):
+    """Replace handle_request with a recorder of the in-request context."""
+    seen = {}
+
+    async def _recorder(scope, receive, send):
+        seen["identity"] = current_user_identity.get()
+        seen["bearer"] = jawafdehi_bearer_token.get()
+
+    monkeypatch.setattr(mcp_server.session_manager, "handle_request", _recorder)
+    return seen
+
+
+class TestBearerHelper:
+    def test_extracts_bearer(self):
+        assert _bearer_from_headers({b"authorization": b"Bearer abc"}) == "abc"
+
+    def test_ignores_non_bearer(self):
+        assert _bearer_from_headers({b"authorization": b"Token abc"}) is None
+
+    def test_none_when_absent(self):
+        assert _bearer_from_headers({}) is None
+
+
+class TestMiddleware:
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    async def test_valid_bearer_sets_identity(self, mcp_server, captured, monkeypatch):
+        identity = {"sub": "u1", "email": "a@x.org", "roles": ["contributor"]}
+
+        async def _resolve(token):
+            assert token == "good-token"
+            return identity
+
+        monkeypatch.setattr(http_server, "resolve_bearer_identity", _resolve)
+
+        scope = _make_scope([(b"authorization", b"Bearer good-token")])
+        await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
+
+        assert captured["identity"] == identity
+        assert captured["bearer"] == "good-token"
+        # contextvars reset after the request
+        assert current_user_identity.get() is None
+        assert jawafdehi_bearer_token.get() is None
+
+    async def test_invalid_bearer_returns_401(self, mcp_server, monkeypatch):
+        async def _resolve(token):
+            raise OIDCError("invalid token or signature")
+
+        monkeypatch.setattr(http_server, "resolve_bearer_identity", _resolve)
+
+        send = _SendRecorder()
+        scope = _make_scope([(b"authorization", b"Bearer bad")])
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+
+        assert send.status == 401
+        assert json.loads(send.body)["error"] == "invalid_token"
         assert current_user_identity.get() is None
 
-    async def test_public_user_identity_resolved(self, mcp_server):
-        scope = _make_scope([(b"x-jawafdehi-user-id", b"owui-pub-1")])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
-        assert current_user_identity.get() is None
-
-    async def test_no_header_no_identity(self, mcp_server):
+    async def test_no_bearer_is_anonymous(self, mcp_server, captured):
         scope = _make_scope([])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
-        assert current_user_identity.get() is None
+        await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
+        assert captured["identity"] is None
+        assert captured["bearer"] is None
 
-    async def test_identity_cleanup_on_api_error(self, mcp_server):
-        scope = _make_scope([(b"x-jawafdehi-user-id", b"owui-error-1")])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
-        assert current_user_identity.get() is None
+    async def test_health_endpoint(self, mcp_server):
+        send = _SendRecorder()
+        scope = _make_scope([], path="/health")
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        assert send.status == 200
 
-    async def test_admin_role_resolved(self, mcp_server):
-        scope = _make_scope([(b"x-jawafdehi-user-id", b"owui-admin-1")])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
-        assert current_user_identity.get() is None
-
-    async def test_moderator_role_resolved(self, mcp_server):
-        scope = _make_scope([(b"x-jawafdehi-user-id", b"owui-mod-1")])
-        await mcp_server._handle_http(scope, _dummy_receive, _noop_send)
-        assert jawafdehi_user_id.get() is None
-        assert current_user_identity.get() is None
-
-
-class TestLiveApiIntegration:
-    async def test_resolve_caseworker(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import resolve_user_identity
-
-        identity = await resolve_user_identity("owui-cw-1")
-        assert identity is not None
-        assert identity["user_id"] == 1
-        assert identity["username"] == "caseworker1"
-        assert "Contributor" in identity["roles"]
-
-    async def test_resolve_public_user(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import resolve_user_identity
-
-        identity = await resolve_user_identity("owui-pub-1")
-        assert identity is not None
-        assert identity["user_id"] == 4
-        assert identity["roles"] == []
-
-    async def test_resolve_admin_user(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import resolve_user_identity
-
-        identity = await resolve_user_identity("owui-admin-1")
-        assert identity is not None
-        assert "Admin" in identity["roles"]
-
-    async def test_resolve_moderator_user(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import resolve_user_identity
-
-        identity = await resolve_user_identity("owui-mod-1")
-        assert identity is not None
-        assert "Moderator" in identity["roles"]
-
-    async def test_resolve_returns_none_on_api_error(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import resolve_user_identity
-
-        identity = await resolve_user_identity("owui-error-1")
-        assert identity is None
+    async def test_protected_resource_metadata(self, mcp_server, monkeypatch):
+        monkeypatch.setenv("OIDC_ISSUER", "https://auth.x.org")
+        monkeypatch.setenv("OIDC_API_AUDIENCE", "proj-1")
+        send = _SendRecorder()
+        scope = _make_scope([], path="/.well-known/oauth-protected-resource")
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        assert send.status == 200
+        meta = json.loads(send.body)
+        assert meta["resource"] == "proj-1"
+        assert meta["authorization_servers"] == ["https://auth.x.org"]
 
 
-class TestToolFilteringEndToEnd:
-    async def test_caseworker_gets_all_tools(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import current_user_identity as cid
-        from jawafdehi_mcp.server import TOOL_MAP, _get_allowed_tools
-
-        cid.set({"user_id": 1, "username": "cw", "roles": ["Contributor"]})
-        try:
-            tools = _get_allowed_tools()
-            assert len(tools) == len(TOOL_MAP)
-        finally:
-            cid.set(None)
-
-    async def test_public_user_gets_read_only_tools(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import PUBLIC_READ_ONLY_TOOL_NAMES
-        from jawafdehi_mcp.identity import current_user_identity as cid
-        from jawafdehi_mcp.server import _get_allowed_tools
-
-        cid.set({"user_id": 2, "username": "pub", "roles": []})
-        try:
-            tools = _get_allowed_tools()
-            tool_names = {t.name for t in tools}
-            assert tool_names == PUBLIC_READ_ONLY_TOOL_NAMES
-        finally:
-            cid.set(None)
-
-    async def test_admin_user_gets_all_tools(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import current_user_identity as cid
-        from jawafdehi_mcp.server import TOOL_MAP, _get_allowed_tools
-
-        cid.set({"user_id": 3, "username": "admin", "roles": ["Admin"]})
-        try:
-            tools = _get_allowed_tools()
-            assert len(tools) == len(TOOL_MAP)
-        finally:
-            cid.set(None)
-
-    async def test_moderator_user_gets_all_tools(self, mock_api_url, monkeypatch):
-        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-integration-token")
-        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", mock_api_url)
-
-        from jawafdehi_mcp.identity import current_user_identity as cid
-        from jawafdehi_mcp.server import TOOL_MAP, _get_allowed_tools
-
-        cid.set({"user_id": 4, "username": "mod", "roles": ["Moderator"]})
-        try:
-            tools = _get_allowed_tools()
-            assert len(tools) == len(TOOL_MAP)
-        finally:
-            cid.set(None)
-
-
-async def _noop_send(message):
-    pass
+class TestProtectedResourceMetadata:
+    def test_resource_defaults_to_audience(self, monkeypatch):
+        monkeypatch.delenv("OIDC_RESOURCE", raising=False)
+        monkeypatch.setenv("OIDC_API_AUDIENCE", "aud-1")
+        monkeypatch.setenv("OIDC_ISSUER", "https://iss.x.org")
+        meta = _protected_resource_metadata()
+        assert meta["resource"] == "aud-1"
+        assert meta["bearer_methods_supported"] == ["header"]

@@ -1,17 +1,14 @@
-"""Per-request user identity resolution for jawafdehi-mcp.
+"""Per-request user identity helpers for jawafdehi-mcp.
 
-Resolves user identity via jawafdehi-api's /api/caseworker/me endpoint,
-stores the result in a request-scoped ContextVar, and maps resolved
-roles to allowed MCP tool names.
+Identity is built from the caller's verified OIDC bearer token (see
+``oidc.py`` and ``http_server.py``) and stored in a request-scoped ContextVar.
+This module maps the resolved roles to the set of allowed MCP tool names.
 """
 
 import os
 from contextvars import ContextVar
 
-import httpx
 import structlog
-
-from .request_context import get_forwarded_headers
 
 logger = structlog.get_logger()
 
@@ -20,6 +17,7 @@ current_user_identity: ContextVar[dict | None] = ContextVar(
 )
 
 PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
+    "get_current_user",
     "search_jawafdehi_cases",
     "get_jawafdehi_case",
     "search_jawaf_entities",
@@ -34,91 +32,46 @@ PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
     "convert_to_markdown",
 }
 
-_DEFAULT_WRITE_ROLES = ("Contributor", "Admin", "Moderator")
+# Zitadel role keys are lowercase (admin, contributor, moderator, ...); matching
+# is case-insensitive so legacy capitalized names also work.
+_DEFAULT_WRITE_ROLES = ("contributor", "admin", "moderator")
 
 
 def _write_role_names() -> set[str]:
-    """Roles that grant write-tool access.
+    """Roles that grant write-tool access (lowercased).
 
-    Configurable via MCP_WRITE_ROLES (comma-separated) so new Zitadel/Django
-    roles can be granted write access without a code change. Falls back to the
-    default caseworker roles when unset.
+    Configurable via MCP_WRITE_ROLES (comma-separated) so new roles can be
+    granted write access without a code change. Falls back to the default
+    caseworker roles when unset.
     """
     raw = (os.getenv("MCP_WRITE_ROLES") or "").strip()
-    if not raw:
-        return set(_DEFAULT_WRITE_ROLES)
-    return {role.strip() for role in raw.split(",") if role.strip()}
+    names = (
+        [role.strip() for role in raw.split(",") if role.strip()]
+        if raw
+        else list(_DEFAULT_WRITE_ROLES)
+    )
+    return {name.lower() for name in names}
 
 
 CASEWORKER_ROLE_NAMES: set[str] = _write_role_names()
-
-
-def _get_jawafdehi_base_url() -> str:
-    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org").rstrip(
-        "/"
-    )
-
-
-def _get_jawafdehi_api_token() -> str | None:
-    token = os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
-    return token or None
-
-
-async def resolve_user_identity(user_id: str) -> dict | None:
-    """Resolve user identity via jawafdehi-api GET /api/caseworker/me.
-
-    Returns the parsed JSON identity dict on success, or None if resolution
-    is unavailable or fails (public-access fallback).
-    """
-    token = _get_jawafdehi_api_token()
-    if not token:
-        return None
-
-    base_url = _get_jawafdehi_base_url()
-    url = f"{base_url}/api/caseworker/me"
-
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {
-                "Authorization": f"Token {token}",
-                "X-Jawafdehi-User-Id": user_id,
-            }
-            headers.update(get_forwarded_headers())
-            response = await client.get(
-                url,
-                headers=headers,
-                timeout=10,
-            )
-            response.raise_for_status()
-            identity: dict = response.json()
-            logger.info(
-                "user_identity_resolved",
-                user_id=identity.get("user_id"),
-                username=identity.get("username"),
-                roles=identity.get("roles"),
-            )
-            return identity
-    except Exception:
-        logger.exception("user_identity_resolution_failed", forwarded_user_id=user_id)
-        return None
 
 
 def role_has_write_access(roles: list[str]) -> bool:
     """Return True if any of the given roles grants write-tool access.
 
     Reads MCP_WRITE_ROLES at call time so configuration changes take effect
-    without re-importing the module.
+    without re-importing the module. Case-insensitive.
     """
     write_roles = _write_role_names()
-    return any(role in write_roles for role in roles)
+    return any(str(role).lower() in write_roles for role in roles)
 
 
 def get_allowed_tool_names(identity: dict | None, all_tool_names: set[str]) -> set[str]:
     """Return the set of tool names allowed for the given identity.
 
     - No identity → public read-only tools only.
-    - Identity with a caseworker role → all tools.
-    - Identity without a caseworker role → public read-only tools.
+    - Identity with a write-granting role → all tools.
+    - Identity without a write-granting role → public read-only tools.
     """
     if identity is None:
         return PUBLIC_READ_ONLY_TOOL_NAMES & all_tool_names

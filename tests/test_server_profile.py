@@ -80,7 +80,7 @@ class TestAllowedTools:
         tools = _get_allowed_tools()
         tool_names = {t.name for t in tools}
         assert tool_names == PUBLIC_READ_ONLY_TOOL_NAMES
-        assert len(tools) == 12
+        assert len(tools) == 13
 
     def test_token_mode_no_user_returns_all(self, monkeypatch):
         """Token present but no identity: all tools."""
@@ -182,4 +182,4 @@ class TestPublicToolSetIntegrity:
         assert len(ALL_TOOL_NAMES) == len(set(TOOL_MAP.keys()))
 
     def test_public_tools_count(self):
-        assert len(PUBLIC_READ_ONLY_TOOL_NAMES) == 12
+        assert len(PUBLIC_READ_ONLY_TOOL_NAMES) == 13

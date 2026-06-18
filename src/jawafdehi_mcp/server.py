@@ -25,6 +25,7 @@ from .tools import (  # noqa: E402
     CreateJawafEntityTool,
     DateConverterTool,
     DocumentConverterTool,
+    GetCurrentUserTool,
     GetJawafdehiCaseTool,
     GetJawafEntityTool,
     GetNESEntityPrefixesTool,
@@ -48,6 +49,7 @@ logger = structlog.get_logger()
 app = Server("jawafdehi-mcp")
 
 TOOLS: list[BaseTool] = [
+    GetCurrentUserTool(),
     NGMJudicialTool(),
     NGMExtractCaseDataTool(),
     SearchJawafdehiCasesTool(),
@@ -103,16 +105,16 @@ def _is_tool_allowed(name: str) -> bool:
 def _bind_audit_context(identity: dict | None) -> None:
     if identity:
         structlog.contextvars.bind_contextvars(
-            jawafdehi_user_id=str(identity.get("user_id", "")),
-            jawafdehi_username=identity.get("username", ""),
+            jawafdehi_user_sub=str(identity.get("sub", "")),
+            jawafdehi_user_email=identity.get("email", ""),
             jawafdehi_roles=identity.get("roles", []),
         )
 
 
 def _unbind_audit_context() -> None:
     structlog.contextvars.unbind_contextvars(
-        "jawafdehi_user_id",
-        "jawafdehi_username",
+        "jawafdehi_user_sub",
+        "jawafdehi_user_email",
         "jawafdehi_roles",
     )
 
@@ -131,7 +133,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         user_info = ""
         if identity:
             user_info = (
-                f" (user_id={identity.get('user_id')}, roles={identity.get('roles')})"
+                f" (email={identity.get('email')}, roles={identity.get('roles')})"
             )
         raise ValueError(
             f"Tool '{name}' is not available for the current user{user_info}. "
