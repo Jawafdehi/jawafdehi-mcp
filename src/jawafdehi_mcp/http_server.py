@@ -32,10 +32,11 @@ def _bearer_from_headers(headers: dict[bytes, bytes]) -> str | None:
     raw = headers.get(b"authorization", b"").decode(errors="replace").strip()
     if not raw:
         return None
-    scheme, _, value = raw.partition(" ")
-    if scheme.lower() != "bearer" or not value.strip():
+    # Split on any run of whitespace (HTTP allows multiple spaces / tabs).
+    parts = raw.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
         return None
-    return value.strip()
+    return parts[1].strip()
 
 
 def _protected_resource_metadata() -> dict:

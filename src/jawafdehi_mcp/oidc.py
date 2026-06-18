@@ -5,6 +5,7 @@ identity (email, name, roles) from the OIDC userinfo endpoint. Mirrors
 jawafdehi-api's OIDCJWTAuthentication so both services trust the same tokens.
 """
 
+import asyncio
 import os
 import time
 
@@ -104,6 +105,9 @@ async def fetch_userinfo(token: str, claims: dict) -> dict:
         logger.warning("oidc_userinfo_fetch_failed", error=str(exc))
         raise OIDCError("could not resolve user identity") from exc
 
+    # Prune expired entries so the per-token cache can't grow unbounded.
+    for stale in [k for k, (exp, _) in _userinfo_cache.items() if exp <= now]:
+        del _userinfo_cache[stale]
     _userinfo_cache[key] = (float(claims.get("exp", now + 300)), info)
     return info
 
@@ -129,6 +133,8 @@ def build_identity(claims: dict, info: dict) -> dict:
 
 async def resolve_bearer_identity(token: str) -> dict:
     """Verify a bearer token and resolve the full identity. Raises OIDCError."""
-    claims = verify_bearer_token(token)
+    # verify_bearer_token may do a blocking JWKS fetch (first call / key
+    # rotation); run it off the event loop.
+    claims = await asyncio.to_thread(verify_bearer_token, token)
     info = await fetch_userinfo(token, claims)
     return build_identity(claims, info)
