@@ -1,7 +1,10 @@
 """Streamable HTTP transport for jawafdehi-mcp.
 
-Wraps the MCP server with a Streamable HTTP transport using
-mcp's built-in StreamableHTTPSessionManager.
+Wraps the MCP server with a Streamable HTTP transport using mcp's built-in
+StreamableHTTPSessionManager, and authenticates each request as an OIDC
+resource server: a verified ``Authorization: Bearer`` token resolves the
+caller's identity and roles, which the MCP server uses to gate tools and which
+is forwarded upstream to jawafdehi-api.
 
 Usage:
     jawafdehi-mcp-http
@@ -9,68 +12,50 @@ Usage:
     HTTP_HOST=127.0.0.1 HTTP_PORT=9090 jawafdehi-mcp-http
 """
 
+import json
 import os
 
-import jwt
 import structlog
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
-from .identity import current_user_identity, resolve_user_identity
-from .request_context import jawafdehi_user_id, jawafdehi_user_name
+from .identity import current_user_identity
+from .oidc import OIDCError, resolve_bearer_identity
+from .request_context import jawafdehi_bearer_token
 from .server import app as mcp_app
 
 logger = structlog.get_logger()
 
-OWUI_JWT_HEADER = b"x-openwebui-user-jwt"
-OWUI_JWT_ISSUER = "open-webui"
+WELL_KNOWN_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource"
 
 
-def _decode_owui_jwt(token: str, secret: str) -> dict | None:
-    """Verify Open WebUI's HS256 user-info JWT; return its claims or None."""
-    try:
-        return jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            issuer=OWUI_JWT_ISSUER,
-            options={"require": ["exp", "sub"]},
-            leeway=10,
-        )
-    except jwt.InvalidTokenError:
+def _bearer_from_headers(headers: dict[bytes, bytes]) -> str | None:
+    raw = headers.get(b"authorization", b"").decode(errors="replace").strip()
+    if not raw:
         return None
+    scheme, _, value = raw.partition(" ")
+    if scheme.lower() != "bearer" or not value.strip():
+        return None
+    return value.strip()
 
 
-def extract_identity(headers: dict[bytes, bytes]) -> tuple[str | None, str | None]:
-    """Resolve (user_id, user_name) for the request.
-
-    When OWUI_USER_JWT_SECRET is set, trust ONLY the signed X-OpenWebUI-User-Jwt
-    that stock Open WebUI mints (sub = OWUI user id); the legacy plaintext
-    X-Jawafdehi-User-* headers are spoofable and ignored. Without the secret
-    (local dev), fall back to the legacy plaintext headers.
-    """
-    secret = (os.getenv("OWUI_USER_JWT_SECRET") or "").strip()
-    if secret:
-        raw = headers.get(OWUI_JWT_HEADER, b"").decode(errors="replace").strip()
-        if not raw:
-            return None, None
-        payload = _decode_owui_jwt(raw, secret)
-        if payload is None:
-            logger.warning("owui_jwt_verification_failed")
-            return None, None
-        uid = str(payload.get("sub") or "").strip() or None
-        uname = str(payload.get("name") or "").strip() or None
-        return uid, uname
-
-    raw_id = headers.get(b"x-jawafdehi-user-id", b"").decode(errors="replace").strip()
-    raw_name = (
-        headers.get(b"x-jawafdehi-user-name", b"").decode(errors="replace").strip()
-    )
-    return (raw_id or None), (raw_name or None)
+def _protected_resource_metadata() -> dict:
+    """RFC 9728 Protected Resource Metadata so OAuth clients (e.g. Open WebUI)
+    can discover the authorization server and set the token audience."""
+    resource = (
+        os.getenv("OIDC_RESOURCE") or os.getenv("OIDC_API_AUDIENCE") or ""
+    ).strip()
+    issuer = (os.getenv("OIDC_ISSUER") or "").strip()
+    return {
+        "resource": resource,
+        "authorization_servers": [issuer] if issuer else [],
+        "bearer_methods_supported": ["header"],
+        "scopes_supported": ["openid", "email", "profile"],
+    }
 
 
 class JawafdehiMCPServer:
-    """Minimal ASGI app wrapping StreamableHTTPSessionManager with
-    per-request user identity capture (see extract_identity)."""
+    """Minimal ASGI app wrapping StreamableHTTPSessionManager with per-request
+    OIDC bearer authentication (see resolve_bearer_identity)."""
 
     def __init__(self) -> None:
         self.session_manager = StreamableHTTPSessionManager(
@@ -85,7 +70,7 @@ class JawafdehiMCPServer:
             await self._handle_http(scope, receive, send)
 
     @staticmethod
-    async def _send_response(send, status_code, headers):
+    async def _send_response(send, status_code, headers, body: bytes = b""):
         await send(
             {
                 "type": "http.response.start",
@@ -93,12 +78,14 @@ class JawafdehiMCPServer:
                 "headers": [(k.encode(), v.encode()) for k, v in headers],
             }
         )
-        await send(
-            {
-                "type": "http.response.body",
-                "body": b"",
-            }
-        )
+        await send({"type": "http.response.body", "body": body})
+
+    async def _send_json(self, send, status_code, payload, extra_headers=None):
+        body = json.dumps(payload).encode()
+        headers = [("content-type", "application/json")]
+        if extra_headers:
+            headers.extend(extra_headers)
+        await self._send_response(send, status_code, headers, body)
 
     async def _handle_lifespan(self, scope, receive, send):
         """Handle ASGI lifespan protocol."""
@@ -115,34 +102,46 @@ class JawafdehiMCPServer:
             await send({"type": "lifespan.shutdown.complete"})
 
     async def _handle_http(self, scope, receive, send):
-        """Resolve the request's user identity, resolve roles, then delegate."""
+        """Authenticate the request's bearer token, then delegate to MCP."""
         path = scope.get("path", "")
         if path == "/health":
             await receive()
             await self._send_response(send, 200, [("content-type", "text/plain")])
             return
+        if path == WELL_KNOWN_PROTECTED_RESOURCE:
+            await receive()
+            await self._send_json(send, 200, _protected_resource_metadata())
+            return
+
         headers = dict(scope.get("headers", []))
-        uid, uname = extract_identity(headers)
-        id_token = None
-        name_token = None
-        identity_token = None
-        if uid:
-            id_token = jawafdehi_user_id.set(uid)
-        if uname:
-            name_token = jawafdehi_user_name.set(uname)
-        if uid:
-            identity = await resolve_user_identity(uid)
-            if identity:
-                identity_token = current_user_identity.set(identity)
+        token = _bearer_from_headers(headers)
+        token_ctx = None
+        identity_ctx = None
+
+        if token:
+            try:
+                identity = await resolve_bearer_identity(token)
+            except OIDCError as exc:
+                await receive()
+                await self._send_json(
+                    send,
+                    401,
+                    {"error": "invalid_token", "detail": str(exc)},
+                    extra_headers=[
+                        ("www-authenticate", 'Bearer error="invalid_token"')
+                    ],
+                )
+                return
+            token_ctx = jawafdehi_bearer_token.set(token)
+            identity_ctx = current_user_identity.set(identity)
+
         try:
             await self.session_manager.handle_request(scope, receive, send)
         finally:
-            if name_token is not None:
-                jawafdehi_user_name.reset(name_token)
-            if identity_token is not None:
-                current_user_identity.reset(identity_token)
-            if id_token is not None:
-                jawafdehi_user_id.reset(id_token)
+            if identity_ctx is not None:
+                current_user_identity.reset(identity_ctx)
+            if token_ctx is not None:
+                jawafdehi_bearer_token.reset(token_ctx)
 
 
 app = JawafdehiMCPServer()

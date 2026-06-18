@@ -8,7 +8,7 @@ import httpx
 import structlog
 from mcp.types import TextContent
 
-from ..request_context import get_forwarded_headers
+from ..request_context import get_forwarded_headers, jawafdehi_bearer_token
 from .base import BaseTool
 
 logger = structlog.get_logger()
@@ -25,14 +25,29 @@ def _get_jawafdehi_api_token() -> str | None:
     return token or None
 
 
+def _has_upstream_auth() -> bool:
+    """True if the request can authenticate to jawafdehi-api: a forwarded OIDC
+    bearer (HTTP transport) or a service token (stdio/dev fallback)."""
+    return bool(jawafdehi_bearer_token.get()) or bool(_get_jawafdehi_api_token())
+
+
 def _get_auth_headers() -> dict[str, str]:
-    """Return Authorization + forwarded identity headers."""
+    """Return Authorization headers for upstream calls.
+
+    Prefer the caller's forwarded OIDC bearer; fall back to the service token
+    (stdio/dev). get_forwarded_headers() wins because it overwrites Authorization.
+    """
     headers: dict[str, str] = {}
     token = _get_jawafdehi_api_token()
     if token:
         headers["Authorization"] = f"Token {token}"
     headers.update(get_forwarded_headers())
     return headers
+
+
+_NO_AUTH_MESSAGE = (
+    "Authentication required: sign in (OIDC bearer) or set JAWAFDEHI_API_TOKEN."
+)
 
 
 def _json_text_content(payload: Any) -> list[TextContent]:
@@ -257,7 +272,7 @@ class CreateJawafdehiCaseTool(BaseTool):
     def description(self) -> str:
         return (
             "Create a draft Jawafdehi case using a simple authenticated interface. "
-            "Requires JAWAFDEHI_API_TOKEN."
+            "Requires a signed-in user with write access."
         )
 
     @property
@@ -289,12 +304,9 @@ class CreateJawafdehiCaseTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         title = arguments.get("title")
         case_type = arguments.get("case_type")
-        token = _get_jawafdehi_api_token()
 
-        if not token:
-            return _error_text_content(
-                "Error: JAWAFDEHI_API_TOKEN environment variable is required."
-            )
+        if not _has_upstream_auth():
+            return _error_text_content(f"Error: {_NO_AUTH_MESSAGE}")
 
         if not title:
             return _error_text_content("Error: title is required")
@@ -353,8 +365,8 @@ class PatchJawafdehiCaseTool(BaseTool):
     def description(self) -> str:
         return (
             "Patch a Jawafdehi case using raw RFC 6902 JSON Patch operations. "
-            "Requires JAWAFDEHI_API_TOKEN. Use a slug (from search results) "
-            "for direct lookup."
+            "Requires a signed-in user with write access. Use a slug (from "
+            "search results) for direct lookup."
         )
 
     @property
@@ -389,12 +401,9 @@ class PatchJawafdehiCaseTool(BaseTool):
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         operations = arguments.get("operations")
         slug = arguments.get("slug")
-        token = _get_jawafdehi_api_token()
 
-        if not token:
-            return _error_text_content(
-                "Error: JAWAFDEHI_API_TOKEN environment variable is required."
-            )
+        if not _has_upstream_auth():
+            return _error_text_content(f"Error: {_NO_AUTH_MESSAGE}")
 
         if not slug or not isinstance(slug, str) or not slug.strip():
             return _error_text_content(
@@ -494,20 +503,9 @@ class SubmitNESChangeTool(BaseTool):
             "required": ["action", "payload", "change_description"],
         }
 
-    def _get_api_token(self) -> str:
-        token = _get_jawafdehi_api_token()
-        if not token:
-            raise ValueError(
-                "JAWAFDEHI_API_TOKEN environment variable is required for "
-                "submit_nes_change."
-            )
-        return token
-
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        try:
-            self._get_api_token()
-        except ValueError as exc:
-            return _error_text_content(f"Error: {exc}")
+        if not _has_upstream_auth():
+            return _error_text_content(f"Error: {_NO_AUTH_MESSAGE}")
 
         request_body = {
             "action": arguments.get("action"),
@@ -580,11 +578,8 @@ class CreateJawafEntityTool(BaseTool):
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        token = _get_jawafdehi_api_token()
-        if not token:
-            return _error_text_content(
-                "JAWAFDEHI_API_TOKEN environment variable is not set."
-            )
+        if not _has_upstream_auth():
+            return _error_text_content(_NO_AUTH_MESSAGE)
 
         base_url = _get_jawafdehi_base_url()
         url = f"{base_url}/api/entities/"
@@ -664,11 +659,8 @@ class UploadDocumentSourceTool(BaseTool):
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        token = _get_jawafdehi_api_token()
-        if not token:
-            return _error_text_content(
-                "JAWAFDEHI_API_TOKEN environment variable is not set."
-            )
+        if not _has_upstream_auth():
+            return _error_text_content(_NO_AUTH_MESSAGE)
 
         missing_keys = [k for k in ["title", "file_path"] if k not in arguments]
         if missing_keys:
