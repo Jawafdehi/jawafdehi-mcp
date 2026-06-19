@@ -160,7 +160,12 @@ class GetJawafdehiCaseTool(BaseTool):
             "Retrieve detailed information about a specific Jawafdehi case "
             "(published or draft), including its allegations, evidence, timeline, "
             "and audit history. All cases (including drafts) have auto-generated "
-            "slugs. Use the 'slug' from search results for direct lookup."
+            "slugs. Use the 'slug' from search results for direct lookup. The "
+            "'slug' field also accepts a court case reference of the form "
+            "'{court_identifier}:{case_number}' (e.g. 'supreme:081-CR-0081') to "
+            "look up the Jawafdehi case that cites that CIAA court case; the case "
+            "number is normalized automatically (casing, zero-padding, Devanagari "
+            "digits)."
         )
 
     @property
@@ -171,8 +176,11 @@ class GetJawafdehiCaseTool(BaseTool):
                 "slug": {
                     "type": "string",
                     "description": (
-                        "The URL slug of the case (e.g. from search results). "
-                        "The canonical identifier for API lookup."
+                        "The URL slug of the case (e.g. from search results), the "
+                        "canonical identifier for API lookup. Alternatively, a "
+                        "court case reference '{court_identifier}:{case_number}' "
+                        "(e.g. 'supreme:081-CR-0081') to look up the case by the "
+                        "CIAA court case it cites."
                     ),
                 },
                 "fetch_sources": {
