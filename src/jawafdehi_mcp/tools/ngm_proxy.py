@@ -112,6 +112,14 @@ async def execute_ngm_proxy_query(
     try:
         payload: dict[str, Any] = response.json()
     except ValueError:
+        # A non-JSON body on a SUCCESS status (empty body, HTML proxy error page,
+        # …) can't be normalized into columns/rows — surface it instead of
+        # silently returning an empty successful result.
+        if response.is_success:
+            raise RuntimeError(
+                f"Non-JSON response from query endpoint "
+                f"({response.status_code}): {response.text}"
+            )
         payload = {
             "detail": f"Non-JSON response from query endpoint ({response.status_code})",
             "raw": response.text,

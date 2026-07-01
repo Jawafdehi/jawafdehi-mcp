@@ -458,7 +458,9 @@ class TestUploadMaterialFileTool:
 
         response = MagicMock()
         response.status_code = 413
-        response.json.return_value = {"detail": "Uploaded file exceeds the 100 MB limit."}
+        response.json.return_value = {
+            "detail": "Uploaded file exceeds the 100 MB limit."
+        }
 
         context_manager, _ = _mock_async_client(response)
 
