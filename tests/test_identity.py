@@ -83,8 +83,7 @@ class TestGetAllowedToolNames:
             "create_jawafdehi_case",
             "patch_jawafdehi_case",
             "submit_nes_change",
-            "create_jawaf_entity",
-            "upload_document_source",
+            "upload_material_file",
             "ngm_extract_case_data",
         }
         assert PUBLIC_READ_ONLY_TOOL_NAMES.isdisjoint(write_tools)

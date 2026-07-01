@@ -1,4 +1,10 @@
-"""Shared helpers for NGM proxy access via Jawafdehi API."""
+"""Shared helpers for NGM court-data access via the unified Jawafdehi API.
+
+Post-unification (2026-07 hard cut) there is no ``/api/ngm`` proxy: court data
+is queried through the platform's gated SQL plane ``POST /api/query/`` on the one
+Jawafdehi host. Auth is the caller's OIDC bearer (forwarded), with a service
+token fallback for stdio/dev.
+"""
 
 import json
 import os
@@ -74,15 +80,31 @@ async def execute_ngm_proxy_query(
     query: str,
     timeout: float = 15,
 ) -> dict[str, Any]:
-    """Execute a query via Jawafdehi's NGM proxy endpoint."""
+    """Execute a gated SELECT via the unified court-data SQL plane.
+
+    Posts to ``POST /api/query/`` (the gated SQL route mounted alongside the
+    ``/api/courtcases`` read plane; the former ``/api/ngm/query_judicial`` proxy
+    is gone). The request body renames ``timeout`` -> ``timeout_seconds``.
+
+    Auth is OIDC ``Bearer``: the caller's forwarded bearer wins, else the service
+    token is sent as ``Bearer`` (the platform is OIDC-only — the legacy DRF
+    ``Token`` scheme is no longer honoured).
+
+    The endpoint returns a FLAT payload (``{columns, rows, row_count,
+    query_time_ms, max_rows}``) and signals success via the HTTP status — there
+    is no ``{success, data}`` envelope. We normalise it back into the
+    ``{data: {columns, rows, row_count}, query_time_ms}`` shape the callers
+    (``rows_to_dicts`` / ``NGMJudicialTool``) already consume.
+    """
     headers: dict[str, str] = {}
     if token:
-        headers["Authorization"] = f"Token {token}"
+        headers["Authorization"] = f"Bearer {token}"
+    # A forwarded caller bearer (HTTP transport) overrides the service token.
     headers.update(get_forwarded_headers())
 
     response = await client.post(
-        f"{base_url}/api/ngm/query_judicial",
-        json={"query": query, "timeout": timeout},
+        f"{base_url}/api/query/",
+        json={"query": query, "timeout_seconds": timeout},
         headers=headers,
         timeout=_get_proxy_http_timeout(),
     )
@@ -90,16 +112,31 @@ async def execute_ngm_proxy_query(
     try:
         payload: dict[str, Any] = response.json()
     except ValueError:
+        # A non-JSON body on a SUCCESS status (empty body, HTML proxy error page,
+        # …) can't be normalized into columns/rows — surface it instead of
+        # silently returning an empty successful result.
+        if response.is_success:
+            raise RuntimeError(
+                f"Non-JSON response from query endpoint "
+                f"({response.status_code}): {response.text}"
+            )
         payload = {
-            "success": False,
-            "error": f"Non-JSON response from proxy ({response.status_code})",
+            "detail": f"Non-JSON response from query endpoint ({response.status_code})",
             "raw": response.text,
         }
 
-    if not response.is_success or not payload.get("success"):
+    if not response.is_success:
         raise RuntimeError(
-            f"NGM proxy query failed ({response.status_code}): "
+            f"NGM query failed ({response.status_code}): "
             f"{json.dumps(payload, ensure_ascii=False)}"
         )
 
-    return payload
+    return {
+        "success": True,
+        "data": {
+            "columns": payload.get("columns", []),
+            "rows": payload.get("rows", []),
+            "row_count": payload.get("row_count", len(payload.get("rows", []))),
+        },
+        "query_time_ms": payload.get("query_time_ms", 0),
+    }
