@@ -35,12 +35,14 @@ def _get_auth_headers() -> dict[str, str]:
     """Return Authorization headers for upstream calls.
 
     Prefer the caller's forwarded OIDC bearer; fall back to the service token
-    (stdio/dev). get_forwarded_headers() wins because it overwrites Authorization.
+    (stdio/dev), also sent as ``Bearer``. The unified platform is OIDC-only —
+    the legacy DRF ``Token`` scheme is no longer honoured (2026-07 hard cut).
+    get_forwarded_headers() wins because it overwrites Authorization.
     """
     headers: dict[str, str] = {}
     token = _get_jawafdehi_api_token()
     if token:
-        headers["Authorization"] = f"Token {token}"
+        headers["Authorization"] = f"Bearer {token}"
     headers.update(get_forwarded_headers())
     return headers
 
@@ -468,7 +470,17 @@ class PatchJawafdehiCaseTool(BaseTool):
 
 
 class SubmitNESChangeTool(BaseTool):
-    """Tool for submitting authenticated NES queue changes via Jawafdehi API."""
+    """Write an NES entity directly via the unified entity write plane.
+
+    Post-unification (2026-07 hard cut) there is no NES *queue* endpoint
+    (``/api/submit_nes_change`` and the ADD_NAME/CREATE_ENTITY/UPDATE_ENTITY
+    NESQ actions are gone). Writes go straight to the entity store:
+      * CREATE → ``POST /api/entities`` with a JSON-LD / authoring ``document``.
+      * UPDATE → ``PATCH /api/entities/{ref}`` with RFC-6902 ``patch_ops``
+        (add-a-name is just an ``add`` op to ``/name`` — no dedicated action).
+    NES-contributor gated; the API enforces permissions and the ≥2-source held
+    /published gate does NOT apply to direct API writes (they publish).
+    """
 
     @property
     def name(self) -> str:
@@ -477,8 +489,10 @@ class SubmitNESChangeTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Submit a Jawafdehi NES queue change request for one of the supported "
-            "actions: ADD_NAME, CREATE_ENTITY, or UPDATE_ENTITY."
+            "Write an NES entity directly. Use action=CREATE with a JSON-LD "
+            "'document' to create an entity, or action=UPDATE with 'ref' "
+            "(the entity @id or prefix/slug) and RFC-6902 'patch_ops' to modify "
+            "one (e.g. add a name: [{'op':'add','path':'/name/en','value':'...'}])."
         )
 
     @property
@@ -488,68 +502,90 @@ class SubmitNESChangeTool(BaseTool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["ADD_NAME", "CREATE_ENTITY", "UPDATE_ENTITY"],
-                    "description": "NES queue action type.",
+                    "enum": ["CREATE", "UPDATE"],
+                    "description": "CREATE a new entity or UPDATE an existing one.",
                 },
-                "payload": {
+                "ref": {
+                    "type": "string",
+                    "description": (
+                        "UPDATE only: the entity @id IRI or 'prefix/slug' path "
+                        "(e.g. 'person/ram-chandra-poudel')."
+                    ),
+                },
+                "document": {
                     "type": "object",
-                    "description": "Action-specific payload accepted by Jawafdehi NESQ.",
+                    "description": (
+                        "CREATE only: the JSON-LD / authoring entity document "
+                        "(must carry @id or prefix+slug + @type)."
+                    ),
+                },
+                "patch_ops": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": (
+                        "UPDATE only: RFC-6902 JSON Patch operations. Immutable "
+                        "paths (@id/@type/@context/version) are rejected by the API."
+                    ),
                 },
                 "change_description": {
                     "type": "string",
-                    "description": "Human-readable summary of the requested change.",
-                },
-                "auto_approve": {
-                    "type": "boolean",
-                    "description": (
-                        "Optional privileged flag to request immediate approval. "
-                        "The API enforces permission checks."
-                    ),
-                    "default": False,
+                    "description": "Human-readable summary of the change.",
                 },
             },
-            "required": ["action", "payload", "change_description"],
+            "required": ["action", "change_description"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         if not _has_upstream_auth():
             return _error_text_content(f"Error: {_NO_AUTH_MESSAGE}")
 
-        request_body = {
-            "action": arguments.get("action"),
-            "payload": arguments.get("payload"),
-            "change_description": arguments.get("change_description"),
-        }
-        if "auto_approve" in arguments:
-            request_body["auto_approve"] = arguments["auto_approve"]
-
+        action = arguments.get("action")
+        change_description = arguments.get("change_description")
         base_url = _get_jawafdehi_base_url()
-        url = f"{base_url}/api/submit_nes_change"
         headers = _get_auth_headers()
+        headers["Content-Type"] = "application/json"
+        headers["Accept"] = "application/json"
+
+        if action == "CREATE":
+            document = arguments.get("document")
+            if not isinstance(document, dict):
+                return _error_text_content(
+                    "Error: 'document' (object) is required for action=CREATE."
+                )
+            url = f"{base_url}/api/entities"
+            body = {**document, "change_description": change_description}
+            method = "POST"
+        elif action == "UPDATE":
+            ref = arguments.get("ref")
+            patch_ops = arguments.get("patch_ops")
+            if not ref or not isinstance(patch_ops, list):
+                return _error_text_content(
+                    "Error: 'ref' and 'patch_ops' (array) are required for "
+                    "action=UPDATE."
+                )
+            url = f"{base_url}/api/entities/{urllib.parse.quote(str(ref), safe='/')}"
+            body = {"patch_ops": patch_ops, "change_description": change_description}
+            method = "PATCH"
+        else:
+            return _error_text_content(
+                f"Error: unsupported action {action!r} (use CREATE or UPDATE)."
+            )
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    json=request_body,
-                    headers=headers,
-                    timeout=30.0,
+                response = await client.request(
+                    method, url, json=body, headers=headers, timeout=30.0
                 )
 
-            if response.status_code == 201:
+            if response.status_code in (200, 201):
                 return _json_text_content(response.json())
 
-            try:
-                error_body = json.dumps(response.json(), indent=2, ensure_ascii=False)
-            except ValueError:
-                error_body = response.text
-            return _error_text_content(
-                f"Error submitting NES change: HTTP {response.status_code}\n\n"
-                f"{error_body}"
+            return _json_text_content(
+                _build_http_error_payload(response, "Error writing NES entity")
             )
         except httpx.HTTPError as e:
             logger.error("jawafdehi_submit_nes_change_http_error", error=str(e))
-            return _error_text_content(f"Error submitting NES change: {str(e)}")
+            return _error_text_content(f"Error writing NES entity: {str(e)}")
         except Exception as e:
             logger.exception(
                 "jawafdehi_submit_nes_change_unexpected_error", error=str(e)
@@ -557,120 +593,74 @@ class SubmitNESChangeTool(BaseTool):
             return _error_text_content(f"Unexpected error: {str(e)}")
 
 
-class CreateJawafEntityTool(BaseTool):
-    """Tool to create a JawafEntity via the API."""
+class UploadMaterialFileTool(BaseTool):
+    """Attach a file to a Material via the unified material upload endpoint.
+
+    Post-unification the document/evidence store is Materials: this streams a
+    local file to ``POST /api/materials/{source}/{ident}/file`` (multipart),
+    which places it in object storage and appends a roled schema.org
+    ``MediaObject`` to the material's ``associatedMedia`` (creating the material
+    if it does not yet exist). Replaces the retired ``/api/sources`` upload.
+    NGM-role gated.
+    """
 
     @property
     def name(self) -> str:
-        return "create_jawaf_entity"
+        return "upload_material_file"
 
     @property
     def description(self) -> str:
-        return "Create a new JawafEntity linking to an NES ID or via a display name."
+        return (
+            "Attach a file (from disk) to a Material at @id "
+            "/material/{source}/{ident}, uploading it to storage as a roled "
+            "MediaObject. Creates the material if it does not exist (then "
+            "material_type is required)."
+        )
 
     @property
     def input_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "nes_id": {
-                    "type": "string",
-                    "description": "Optional NES ID to link (e.g. 'entity:person/ram-sharma').",
-                },
-                "display_name": {
-                    "type": "string",
-                    "description": "Optional custom display name if not linking an NES ID.",
-                },
-            },
-            "required": ["display_name"],
-        }
-
-    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        if not _has_upstream_auth():
-            return _error_text_content(_NO_AUTH_MESSAGE)
-
-        base_url = _get_jawafdehi_base_url()
-        url = f"{base_url}/api/entities/"
-
-        headers = _get_auth_headers()
-        headers["Content-Type"] = "application/json"
-        headers["Accept"] = "application/json"
-
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, headers=headers, json=arguments)
-
-            if response.status_code == 201:
-                return _json_text_content(response.json())
-
-            return _json_text_content(
-                _build_http_error_payload(response, "Error creating JawafEntity")
-            )
-        except Exception as e:
-            logger.exception("jawafdehi_create_entity_unexpected_error", error=str(e))
-            return _error_text_content(f"Unexpected error creating entity: {str(e)}")
-
-
-class UploadDocumentSourceTool(BaseTool):
-    """Tool to upload a document source."""
-
-    @property
-    def name(self) -> str:
-        return "upload_document_source"
-
-    @property
-    def description(self) -> str:
-        return "Create a new DocumentSource by uploading a file from disk."
-
-    @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {
-                    "type": "string",
-                    "description": "Source description: what the underlying content *is* (describe the document itself).",
-                },
-                "source_type": {
+                "source": {
                     "type": "string",
                     "description": (
-                        "Source category. Supported API enum values: "
-                        "LEGAL_COURT_ORDER, LEGAL_PROCEDURAL, OFFICIAL_GOVERNMENT, "
-                        "FINANCIAL_FORENSIC, INTERNAL_CORPORATE, MEDIA_NEWS, "
-                        "INVESTIGATIVE_REPORT, PUBLIC_COMPLAINT, LEGISLATIVE_DOC, "
-                        "SOCIAL_MEDIA, OTHER_VISUAL."
+                        "Material source segment of the IRI "
+                        "(e.g. 'nkp', 'court'), i.e. /material/{source}/{ident}."
                     ),
                 },
-                "url": {
-                    "type": "array",
-                    "items": {"type": "string", "format": "uri"},
-                    "description": (
-                        "List of external URLs for this source. "
-                        "For news articles, include the original article URL here."
-                    ),
-                },
-                "publication_date": {
+                "ident": {
                     "type": "string",
-                    "format": "date",
-                    "description": (
-                        "Publication date (YYYY-MM-DD). "
-                        "Required for MEDIA_NEWS sources."
-                    ),
+                    "description": "Material ident segment of the IRI.",
                 },
                 "file_path": {
                     "type": "string",
                     "description": "Absolute path to the file on disk to upload.",
                 },
+                "role": {
+                    "type": "string",
+                    "enum": ["RAW", "ALTERNATE", "PERMALINK"],
+                    "description": "Link role for the uploaded file (default RAW).",
+                    "default": "RAW",
+                },
+                "material_type": {
+                    "type": "string",
+                    "description": (
+                        "Required only when CREATING a new material "
+                        "(e.g. court_order). Ignored when the material exists."
+                    ),
+                },
             },
-            "required": ["title", "file_path"],
+            "required": ["source", "ident", "file_path"],
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         if not _has_upstream_auth():
             return _error_text_content(_NO_AUTH_MESSAGE)
 
-        missing_keys = [k for k in ["title", "file_path"] if k not in arguments]
+        missing_keys = [
+            k for k in ["source", "ident", "file_path"] if not arguments.get(k)
+        ]
         if missing_keys:
             return _error_text_content(
                 f"Missing required arguments: {', '.join(missing_keys)}"
@@ -682,30 +672,21 @@ class UploadDocumentSourceTool(BaseTool):
         except OSError as e:
             return _error_text_content(f"Could not read file '{file_path}': {e}")
 
-        filename = file_path.name
+        source = urllib.parse.quote(str(arguments["source"]), safe="")
+        ident = urllib.parse.quote(str(arguments["ident"]), safe="")
         base_url = _get_jawafdehi_base_url()
-        url = f"{base_url}/api/sources/"
+        url = f"{base_url}/api/materials/{source}/{ident}/file"
 
         headers = _get_auth_headers()
         headers["Accept"] = "application/json"
 
-        data = {
-            "title": arguments["title"],
-        }
-        if "description" in arguments:
-            data["description"] = arguments["description"]
-        if "source_type" in arguments:
-            data["source_type"] = arguments["source_type"]
-        if "publication_date" in arguments:
-            data["publication_date"] = arguments["publication_date"]
+        data: dict[str, str] = {}
+        if arguments.get("role"):
+            data["role"] = arguments["role"]
+        if arguments.get("material_type"):
+            data["material_type"] = arguments["material_type"]
 
-        # url is a JSON list; multipart/form-data requires encoding it as JSON
-        import json as _json
-
-        if "url" in arguments and arguments["url"]:
-            data["url"] = _json.dumps(arguments["url"])
-
-        files = {"uploaded_file": (filename, file_bytes)}
+        files = {"file": (file_path.name, file_bytes)}
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -713,141 +694,12 @@ class UploadDocumentSourceTool(BaseTool):
                     url, headers=headers, data=data, files=files
                 )
 
-            if response.status_code == 201:
+            if response.status_code in (200, 201):
                 return _json_text_content(response.json())
 
             return _json_text_content(
-                _build_http_error_payload(response, "Error uploading document source")
+                _build_http_error_payload(response, "Error uploading material file")
             )
         except Exception as e:
-            logger.exception("jawafdehi_upload_document_unexpected_error", error=str(e))
-            return _error_text_content(f"Unexpected error uploading document: {str(e)}")
-
-
-class SearchJawafEntitiesTool(BaseTool):
-    """Tool for searching Jawafdehi entities."""
-
-    @property
-    def name(self) -> str:
-        return "search_jawaf_entities"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Search for Jawafdehi entities (persons, organizations) by name or NES ID. "
-            "Returns entities associated with published cases."
-        )
-
-    @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "search": {
-                    "type": "string",
-                    "description": (
-                        "Search query matched against display_name and nes_id."
-                    ),
-                },
-                "page": {
-                    "type": "integer",
-                    "description": "Page number for pagination (defaults to 1).",
-                    "default": 1,
-                },
-            },
-        }
-
-    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        query_params: dict[str, str] = {}
-
-        if arguments.get("search"):
-            query_params["search"] = arguments["search"]
-
-        if "page" in arguments:
-            query_params["page"] = str(arguments["page"])
-
-        base_url = _get_jawafdehi_base_url()
-        query_string = urllib.parse.urlencode(query_params)
-        url = (
-            f"{base_url}/api/entities/?{query_string}"
-            if query_string
-            else f"{base_url}/api/entities/"
-        )
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    url, headers=_get_auth_headers(), timeout=30.0
-                )
-                response.raise_for_status()
-                return _json_text_content(response.json())
-        except httpx.HTTPError as e:
-            logger.error("jawafdehi_search_entities_http_error", error=str(e))
-            return _error_text_content(
-                f"Error accessing Jawafdehi entities API: {str(e)}"
-            )
-        except Exception as e:
-            logger.exception("jawafdehi_search_entities_unexpected_error", error=str(e))
-            return _error_text_content(f"Unexpected error: {str(e)}")
-
-
-class GetJawafEntityTool(BaseTool):
-    """Tool for retrieving a single Jawafdehi entity by ID."""
-
-    @property
-    def name(self) -> str:
-        return "get_jawaf_entity"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Retrieve a specific Jawafdehi entity by its integer ID, including "
-            "its NES ID, display name, and related published cases."
-        )
-
-    @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "entity_id": {
-                    "type": "integer",
-                    "description": "The integer ID of the Jawafdehi entity.",
-                },
-            },
-            "required": ["entity_id"],
-        }
-
-    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        entity_id = arguments.get("entity_id")
-        if not entity_id:
-            return _error_text_content("Error: entity_id is required")
-
-        base_url = _get_jawafdehi_base_url()
-        url = f"{base_url}/api/entities/{entity_id}/"
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    url, headers=_get_auth_headers(), timeout=30.0
-                )
-                if response.status_code == 404:
-                    return _error_text_content(f"Entity {entity_id} not found.")
-                response.raise_for_status()
-                return _json_text_content(response.json())
-        except httpx.HTTPError as e:
-            logger.error(
-                "jawafdehi_get_entity_http_error",
-                entity_id=entity_id,
-                error=str(e),
-            )
-            return _error_text_content(
-                f"Error accessing Jawafdehi entities API for entity {entity_id}: {str(e)}"
-            )
-        except Exception as e:
-            logger.exception(
-                "jawafdehi_get_entity_unexpected_error",
-                entity_id=entity_id,
-                error=str(e),
-            )
-            return _error_text_content(f"Unexpected error: {str(e)}")
+            logger.exception("jawafdehi_upload_material_unexpected_error", error=str(e))
+            return _error_text_content(f"Unexpected error uploading material: {str(e)}")

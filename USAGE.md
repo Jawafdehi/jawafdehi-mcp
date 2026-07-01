@@ -51,7 +51,7 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
 
 ### ngm_query_judicial
 
-Execute SELECT queries against Nepal's judicial data through Jawafdehi API's NGM proxy endpoint.
+Execute SELECT queries against Nepal's court data through the platform's gated SQL plane (`POST /api/query/`).
 
 **Parameters:**
 - `query` (string, required): SQL SELECT query
@@ -137,76 +137,65 @@ LIMIT 20
 
 ### submit_nes_change
 
-Submit an authenticated NES queue change request through Jawafdehi API.
+Write an NES entity directly on the unified entity plane. There is no NES *queue*
+— `CREATE` posts a JSON-LD document, `UPDATE` applies RFC 6902 patch ops.
 
 **Parameters:**
-- `action` (string, required): One of `ADD_NAME`, `CREATE_ENTITY`, or `UPDATE_ENTITY`
-- `payload` (object, required): Action-specific NES queue payload
+- `action` (string, required): `CREATE` or `UPDATE`
 - `change_description` (string, required): Human-readable summary of the change
+- `document` (object, CREATE only): the JSON-LD / authoring entity document
+- `ref` (string, UPDATE only): entity `@id` IRI or `prefix/slug`
+- `patch_ops` (array, UPDATE only): RFC 6902 JSON Patch operations
 
-**Example: `ADD_NAME`**
-
-```json
-{
-  "action": "ADD_NAME",
-  "payload": {
-    "entity_id": "entity:person/sher-bahadur-deuba",
-    "name": {
-      "kind": "ALIAS",
-      "en": { "full": "S. B. Deuba" }
-    },
-    "author_id": "jawafdehi-queue"
-  },
-  "change_description": "Add common English alias used in reporting"
-}
-```
-
-**Example: `CREATE_ENTITY`**
+**Example: `CREATE`** → `POST /api/entities`
 
 ```json
 {
-  "action": "CREATE_ENTITY",
-  "payload": {
-    "entity_type": "person",
-    "entity_data": {
-      "slug": "pushpa-kamal-dahal",
-      "names": [
-        {
-          "kind": "PRIMARY",
-          "en": { "full": "Pushpa Kamal Dahal" },
-          "ne": { "full": "पुष्पकमल दाहाल" }
-        }
-      ]
-    },
-    "author_id": "jawafdehi-queue"
+  "action": "CREATE",
+  "document": {
+    "prefix": "person",
+    "slug": "pushpa-kamal-dahal",
+    "type": "Person",
+    "name": { "en": "Pushpa Kamal Dahal", "ne": "पुष्पकमल दाहाल" }
   },
   "change_description": "Create missing person entity for case linkage"
 }
 ```
 
-**Example: `UPDATE_ENTITY`**
+**Example: `UPDATE` (add a name)** → `PATCH /api/entities/person/sher-bahadur-deuba`
 
 ```json
 {
-  "action": "UPDATE_ENTITY",
-  "payload": {
-    "entity_id": "entity:person/sher-bahadur-deuba",
-    "updates": {
-      "tags": ["politician", "nepali-congress", "prime-minister"]
-    },
-    "author_id": "jawafdehi-queue"
-  },
-  "change_description": "Add missing role tags for search and filtering"
+  "action": "UPDATE",
+  "ref": "person/sher-bahadur-deuba",
+  "patch_ops": [
+    { "op": "add", "path": "/name/en", "value": "S. B. Deuba" }
+  ],
+  "change_description": "Add common English alias used in reporting"
 }
 ```
 
-The tool returns the serialized queue item created by Jawafdehi API, including
-its `id`, `action`, and current `status`.
+The tool returns the created (201) or updated (200) entity JSON-LD document.
+Immutable paths (`@id`/`@type`/`@context`/version) are rejected by the API.
+
+### upload_material_file
+
+Attach a local file to a Material at `@id = /material/{source}/{ident}`. Streams
+the file to object storage and appends a roled schema.org `MediaObject`; creates
+the material if it does not yet exist (then `material_type` is required).
+
+**Parameters:**
+- `source` (string, required): material source segment of the IRI (e.g. `nkp`, `court`)
+- `ident` (string, required): material ident segment of the IRI
+- `file_path` (string, required): absolute path to the file on disk
+- `role` (string, optional): `RAW` (default), `ALTERNATE`, or `PERMALINK`
+- `material_type` (string, optional): required only when creating a new material
+
+Returns the material JSON-LD (201 created / 200 updated).
 
 ### get_nes_entity_prefixes
 
-Fetch the current list of valid NES entity prefixes that the chat client can use
-when preparing `CREATE_ENTITY` requests.
+Fetch the current list of valid NES entity prefixes.
 
 **Parameters:**
 - None
@@ -222,24 +211,6 @@ when preparing `CREATE_ENTITY` requests.
   ]
 }
 ```
-
-### get_nes_entity_prefix_schema
-
-Fetch the JSON schema for one NES entity prefix.
-
-**Parameters:**
-- `prefix` (string, required): NES entity prefix, for example `person` or `organization/political_party`
-
-**Example input:**
-
-```json
-{
-  "prefix": "organization/political_party"
-}
-```
-
-The tool URL-encodes the prefix path segment before calling NES, so nested
-prefixes are handled correctly.
 
 ## Response Format
 
