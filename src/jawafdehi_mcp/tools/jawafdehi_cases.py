@@ -161,13 +161,16 @@ class GetJawafdehiCaseTool(BaseTool):
         return (
             "Retrieve detailed information about a specific Jawafdehi case "
             "(published or draft), including its allegations, evidence, timeline, "
-            "and audit history. All cases (including drafts) have auto-generated "
-            "slugs. Use the 'slug' from search results for direct lookup. The "
-            "'slug' field also accepts a court case reference of the form "
-            "'{court_identifier}:{case_number}' (e.g. 'supreme:081-CR-0081') to "
-            "look up the Jawafdehi case that cites that CIAA court case; the case "
-            "number is normalized automatically (casing, zero-padding, Devanagari "
-            "digits)."
+            "and audit history. Each evidence entry is a reference into the "
+            "Materials store — ``{material_iri, additional_details, material}`` — "
+            "where ``material`` is the resolved material (display name, type, "
+            "roled URLs), embedded by the API. All cases (including drafts) have "
+            "auto-generated slugs. Use the 'slug' from search results for direct "
+            "lookup. The 'slug' field also accepts a court case reference of the "
+            "form '{court_identifier}:{case_number}' (e.g. 'supreme:081-CR-0081') "
+            "to look up the Jawafdehi case that cites that CIAA court case; the "
+            "case number is normalized automatically (casing, zero-padding, "
+            "Devanagari digits)."
         )
 
     @property
@@ -184,14 +187,6 @@ class GetJawafdehiCaseTool(BaseTool):
                         "(e.g. 'supreme:081-CR-0081') to look up the case by the "
                         "CIAA court case it cites."
                     ),
-                },
-                "fetch_sources": {
-                    "type": "boolean",
-                    "description": (
-                        "If true, the tool will also fetch detailed information "
-                        "for each source referenced in the case."
-                    ),
-                    "default": False,
                 },
             },
         }
@@ -211,8 +206,10 @@ class GetJawafdehiCaseTool(BaseTool):
                 "Use the 'slug' field from search_jawafdehi_cases results."
             )
 
-        fetch_sources = arguments.get("fetch_sources", False)
-
+        # The case detail already embeds each evidence entry's resolved material
+        # (cases own no documents — evidence is a CaseMaterialReference join, and
+        # CaseDetailSerializer resolves the material inline). No separate
+        # source-fetch loop is needed; the old /api/sources endpoint is gone.
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
@@ -221,38 +218,7 @@ class GetJawafdehiCaseTool(BaseTool):
                 if response.status_code == 404:
                     return _error_text_content(f"Case not found ({lookup_label}).")
                 response.raise_for_status()
-                case_data = response.json()
-
-                if fetch_sources and "evidence" in case_data:
-                    resolved_sources = []
-                    source_ids_to_fetch = set()
-
-                    if isinstance(case_data.get("evidence"), list):
-                        for ev in case_data["evidence"]:
-                            if isinstance(ev, dict):
-                                source_id = ev.get("source_id")
-                                if source_id:
-                                    source_ids_to_fetch.add(source_id)
-
-                    for src_id in source_ids_to_fetch:
-                        try:
-                            src_url = f"{base_url.rstrip('/')}/api/sources/{src_id}/"
-                            src_response = await client.get(
-                                src_url, headers=auth_headers, timeout=30.0
-                            )
-                            if src_response.status_code == 200:
-                                resolved_sources.append(src_response.json())
-                        except Exception as e:
-                            logger.warning(
-                                "source_fetch_failed",
-                                source_id=src_id,
-                                error=str(e),
-                            )
-
-                    if resolved_sources:
-                        case_data["_resolved_sources"] = resolved_sources
-
-                return _json_text_content(case_data)
+                return _json_text_content(response.json())
         except httpx.HTTPError as e:
             logger.error(
                 "jawafdehi_get_case_http_error",
