@@ -318,6 +318,39 @@ class TestSubmitNESChangeTool:
         assert kwargs["json"]["patch_ops"] == ops
 
     @pytest.mark.asyncio
+    async def test_update_full_iri_ref_is_encoded_as_one_segment(self, monkeypatch):
+        # A full @id IRI ref must be url-encoded as a single opaque path segment
+        # (safe=''), NOT left with its scheme '//' and path slashes as route
+        # separators — otherwise the detail route can't match it.
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {"@id": "x"}
+
+        context_manager, client = _mock_async_client(response)
+        client.request = AsyncMock(return_value=response)
+
+        iri = "https://portal.jawafdehi.org/entity/person/ram-chandra-poudel"
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            await self.tool.execute(
+                {
+                    "action": "UPDATE",
+                    "ref": iri,
+                    "patch_ops": [{"op": "add", "path": "/name/en", "value": "R"}],
+                    "change_description": "x",
+                }
+            )
+
+        args, _ = client.request.await_args
+        # The IRI is one encoded segment: no bare '//' from the scheme survives.
+        assert args[1].endswith(
+            "/api/entities/https%3A%2F%2Fportal.jawafdehi.org%2Fentity%2Fperson%2Fram-chandra-poudel"
+        )
+
+    @pytest.mark.asyncio
     async def test_create_without_document_errors(self, monkeypatch):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
 

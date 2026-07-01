@@ -529,7 +529,17 @@ class SubmitNESChangeTool(BaseTool):
                     "Error: 'ref' and 'patch_ops' (array) are required for "
                     "action=UPDATE."
                 )
-            url = f"{base_url}/api/entities/{urllib.parse.quote(str(ref), safe='/')}"
+            # The detail route accepts either a bare ``prefix/slug`` path (slashes
+            # are path separators) or a FULLY url-encoded ``@id`` IRI (one opaque
+            # segment). Encode a full IRI with safe='' so its scheme ``//`` and
+            # path slashes don't collapse into route separators; keep slashes for
+            # the prefix/slug form.
+            ref = str(ref)
+            if ref.startswith(("http://", "https://")):
+                ref_path = urllib.parse.quote(ref, safe="")
+            else:
+                ref_path = urllib.parse.quote(ref, safe="/")
+            url = f"{base_url}/api/entities/{ref_path}"
             body = {"patch_ops": patch_ops, "change_description": change_description}
             method = "PATCH"
         else:
