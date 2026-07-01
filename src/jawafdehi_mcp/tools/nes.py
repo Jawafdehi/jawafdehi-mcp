@@ -27,6 +27,21 @@ def _get_nes_base_url() -> str:
     return base.rstrip("/")
 
 
+def _get_nes_headers() -> dict[str, str]:
+    """Auth headers for entity reads.
+
+    Forward the caller's OIDC bearer when present (HTTP transport); otherwise
+    fall back to the service token as ``Bearer`` (stdio/dev). Mirrors the write
+    tools so token-only flows keep working once the unified API requires auth.
+    """
+    headers = get_forwarded_headers()
+    if "Authorization" not in headers:
+        token = os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
+        if token:
+            headers = {"Authorization": f"Bearer {token}"}
+    return headers
+
+
 def _build_text_response(payload: Any) -> list[TextContent]:
     return [
         TextContent(
@@ -114,7 +129,7 @@ class SearchNESEntitiesTool(BaseTool):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    url, headers=get_forwarded_headers(), timeout=30.0
+                    url, headers=_get_nes_headers(), timeout=30.0
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -186,7 +201,7 @@ class GetNESEntitiesTool(BaseTool):
 
                 try:
                     response = await client.get(
-                        url, headers=get_forwarded_headers(), timeout=30.0
+                        url, headers=_get_nes_headers(), timeout=30.0
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -256,7 +271,7 @@ class GetNESTagsTool(BaseTool):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    url, headers=get_forwarded_headers(), timeout=30.0
+                    url, headers=_get_nes_headers(), timeout=30.0
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -301,7 +316,7 @@ class GetNESEntityPrefixesTool(BaseTool):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    url, headers=get_forwarded_headers(), timeout=30.0
+                    url, headers=_get_nes_headers(), timeout=30.0
                 )
 
             if response.status_code == 200:

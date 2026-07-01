@@ -152,9 +152,10 @@ The tool uses `JAWAFDEHI_API_BASE_URL` for the API host and requires
 ### NES Schema Discovery
 
 Use `get_nes_entity_prefixes` to fetch the currently valid NES entity prefixes.
-Entity reads (`search_nes_entities`, `get_nes_entities`, `get_nes_tags`,
-`get_nes_entity_prefixes`) hit the unified host under a bare `/api/entities`
-surface — the standalone `nes.jawafdehi.org` service was retired.
+All entity reads (`search_nes_entities`, `get_nes_entities` → `/api/entities`,
+`get_nes_tags` → `/api/entities/tags`, `get_nes_entity_prefixes` →
+`/api/entity_prefixes`) now hit the ONE unified Jawafdehi host — the standalone
+`nes.jawafdehi.org` service and its `/api/nes` prefix were retired.
 
 ### Available Tables
 

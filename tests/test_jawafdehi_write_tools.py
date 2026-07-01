@@ -450,6 +450,39 @@ class TestUploadMaterialFileTool:
         assert kwargs["files"]["file"][1] == b"pdf-content"
 
     @pytest.mark.asyncio
+    async def test_upload_defaults_role_to_raw_when_omitted(
+        self, monkeypatch, tmp_path
+    ):
+        # The schema advertises role default RAW, but that's metadata only — the
+        # tool must send RAW when the caller omits role.
+        monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
+
+        pdf_file = tmp_path / "order.pdf"
+        pdf_file.write_bytes(b"pdf-content")
+
+        response = MagicMock()
+        response.status_code = 201
+        response.json.return_value = {"@id": "x"}
+
+        context_manager, client = _mock_async_client(response)
+
+        with patch(
+            "jawafdehi_mcp.tools.jawafdehi_cases.httpx.AsyncClient",
+            return_value=context_manager,
+        ):
+            await self.tool.execute(
+                {
+                    "source": "nkp",
+                    "ident": "2080-order-1",
+                    "material_type": "court_order",
+                    "file_path": str(pdf_file),
+                }
+            )
+
+        _, kwargs = client.post.await_args
+        assert kwargs["data"]["role"] == "RAW"
+
+    @pytest.mark.asyncio
     async def test_upload_error_passthrough(self, monkeypatch, tmp_path):
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "test-token")
 

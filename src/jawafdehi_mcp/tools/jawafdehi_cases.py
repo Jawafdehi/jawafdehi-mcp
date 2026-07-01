@@ -657,8 +657,9 @@ class UploadMaterialFileTool(BaseTool):
         headers["Accept"] = "application/json"
 
         data: dict[str, str] = {}
-        if arguments.get("role"):
-            data["role"] = arguments["role"]
+        # input_schema "default" is metadata only (BaseTool doesn't inject it), so
+        # apply the advertised RAW default here rather than sending no role.
+        data["role"] = str(arguments.get("role") or "RAW")
         if arguments.get("material_type"):
             data["material_type"] = arguments["material_type"]
 
