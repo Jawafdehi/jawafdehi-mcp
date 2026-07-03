@@ -80,7 +80,7 @@ class TestAllowedTools:
         tools = _get_allowed_tools()
         tool_names = {t.name for t in tools}
         assert tool_names == PUBLIC_READ_ONLY_TOOL_NAMES
-        assert len(tools) == 13
+        assert len(tools) == 10
 
     def test_token_mode_no_user_returns_all(self, monkeypatch):
         """Token present but no identity: all tools."""
@@ -166,8 +166,7 @@ class TestPublicToolSetIntegrity:
             "create_jawafdehi_case",
             "patch_jawafdehi_case",
             "submit_nes_change",
-            "create_jawaf_entity",
-            "upload_document_source",
+            "upload_material_file",
             "ngm_extract_case_data",
         }
         assert PUBLIC_READ_ONLY_TOOL_NAMES.isdisjoint(write_tool_names)
@@ -176,10 +175,10 @@ class TestPublicToolSetIntegrity:
         private_tools = set(TOOL_MAP.keys()) - PUBLIC_READ_ONLY_TOOL_NAMES
         assert len(private_tools) > 0
         assert "create_jawafdehi_case" in private_tools
-        assert "upload_document_source" in private_tools
+        assert "upload_material_file" in private_tools
 
     def test_all_tool_names_count(self):
         assert len(ALL_TOOL_NAMES) == len(set(TOOL_MAP.keys()))
 
     def test_public_tools_count(self):
-        assert len(PUBLIC_READ_ONLY_TOOL_NAMES) == 13
+        assert len(PUBLIC_READ_ONLY_TOOL_NAMES) == 10

@@ -7,13 +7,36 @@ import httpx
 import structlog
 from mcp.types import TextContent
 
+from ..request_context import get_forwarded_headers
 from .base import BaseTool
 
 logger = structlog.get_logger()
 
 
 def _get_nes_base_url() -> str:
-    return os.getenv("NES_API_BASE_URL", "https://nes.jawafdehi.org").rstrip("/")
+    """Base URL for entity reads.
+
+    Post-unification NES entities are served by the ONE Jawafdehi host under a
+    bare ``/api/entities`` (the standalone ``nes.jawafdehi.org`` service + its
+    ``/api/nes`` prefix were retired in the 2026-07 hard cut, with no override:
+    a legacy NES base URL would silently read the frozen pre-cutover backend).
+    """
+    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://api.jawafdehi.org").rstrip("/")
+
+
+def _get_nes_headers() -> dict[str, str]:
+    """Auth headers for entity reads.
+
+    Forward the caller's OIDC bearer when present (HTTP transport); otherwise
+    fall back to the service token as ``Bearer`` (stdio/dev). Mirrors the write
+    tools so token-only flows keep working once the unified API requires auth.
+    """
+    headers = get_forwarded_headers()
+    if "Authorization" not in headers:
+        token = os.getenv("JAWAFDEHI_API_TOKEN", "").strip()
+        if token:
+            headers = {"Authorization": f"Bearer {token}"}
+    return headers
 
 
 def _build_text_response(payload: Any) -> list[TextContent]:
@@ -102,7 +125,9 @@ class SearchNESEntitiesTool(BaseTool):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
+                response = await client.get(
+                    url, headers=_get_nes_headers(), timeout=30.0
+                )
                 response.raise_for_status()
                 data = response.json()
 
@@ -172,7 +197,9 @@ class GetNESEntitiesTool(BaseTool):
                 url = f"{base_url}/api/entities?ids={urllib.parse.quote(ids_str)}"
 
                 try:
-                    response = await client.get(url, timeout=30.0)
+                    response = await client.get(
+                        url, headers=_get_nes_headers(), timeout=30.0
+                    )
                     response.raise_for_status()
                     data = response.json()
 
@@ -240,7 +267,9 @@ class GetNESTagsTool(BaseTool):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
+                response = await client.get(
+                    url, headers=_get_nes_headers(), timeout=30.0
+                )
                 response.raise_for_status()
                 data = response.json()
 
@@ -283,7 +312,9 @@ class GetNESEntityPrefixesTool(BaseTool):
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
+                response = await client.get(
+                    url, headers=_get_nes_headers(), timeout=30.0
+                )
 
             if response.status_code == 200:
                 return _build_text_response(response.json())
@@ -316,76 +347,4 @@ class GetNESEntityPrefixesTool(BaseTool):
             ]
         except Exception as exc:
             logger.exception("nes_prefixes_unexpected_error", error=str(exc))
-            return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]
-
-
-class GetNESEntityPrefixSchemaTool(BaseTool):
-    """Tool for fetching JSON schema for a NES entity prefix."""
-
-    @property
-    def name(self) -> str:
-        return "get_nes_entity_prefix_schema"
-
-    @property
-    def description(self) -> str:
-        return "Fetch the JSON schema for a specific NES entity prefix."
-
-    @property
-    def input_schema(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "prefix": {
-                    "type": "string",
-                    "description": "NES entity prefix to inspect.",
-                }
-            },
-            "required": ["prefix"],
-        }
-
-    async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        prefix = arguments.get("prefix")
-        if not prefix:
-            return [TextContent(type="text", text="Error: prefix is required.")]
-
-        encoded_prefix = urllib.parse.quote(prefix, safe="")
-        url = f"{_get_nes_base_url()}/api/entity_prefixes/{encoded_prefix}/schema"
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=30.0)
-
-            if response.status_code == 200:
-                return _build_text_response(response.json())
-
-            error_message = _extract_error_message(response)
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "Error fetching NES entity prefix schema: "
-                        f"HTTP {response.status_code}\n\n{error_message}"
-                    ),
-                )
-            ]
-        except httpx.TimeoutException:
-            logger.warning("nes_prefix_schema_timeout", prefix=prefix)
-            return [
-                TextContent(
-                    type="text",
-                    text="Error fetching NES entity prefix schema: request timed out.",
-                )
-            ]
-        except httpx.HTTPError as exc:
-            logger.error("nes_prefix_schema_http_error", prefix=prefix, error=str(exc))
-            return [
-                TextContent(
-                    type="text",
-                    text=f"Error fetching NES entity prefix schema: {str(exc)}",
-                )
-            ]
-        except Exception as exc:
-            logger.exception(
-                "nes_prefix_schema_unexpected_error", prefix=prefix, error=str(exc)
-            )
             return [TextContent(type="text", text=f"Unexpected error: {str(exc)}")]

@@ -141,5 +141,5 @@ class TestEnvironmentValidation:
         monkeypatch.setenv("JAWAFDEHI_API_TOKEN", "token-123")
 
         result = self.tool._validate_environment()
-        assert result[0] == "https://portal.jawafdehi.org"
+        assert result[0] == "https://api.jawafdehi.org"
         assert result[1] == "token-123"

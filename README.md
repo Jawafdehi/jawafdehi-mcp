@@ -19,16 +19,19 @@ Model Context Protocol (MCP) server providing tools for integrating LLM workflow
 
 ### Nepal Entity Service (NES)
 
-- `submit_nes_change`: Submit NES queue changes through Jawafdehi API
+- `submit_nes_change`: Write an NES entity directly — `CREATE` (POST a JSON-LD document) or `UPDATE` (PATCH by ref with RFC 6902 ops)
 - `search_nes_entities`: Search Nepal Entity Service for persons and organizations
 - `get_nes_entities`: Retrieve complete entity profiles
 - `get_nes_entity_prefixes`: Fetch valid NES entity prefixes for creation/classification
-- `get_nes_entity_prefix_schema`: Fetch the JSON schema for a specific NES entity prefix
 - `get_nes_tags`: Fetch all available entity tags
+
+### Materials
+
+- `upload_material_file`: Attach a file to a Material (`/material/{source}/{ident}`), uploading it to storage as a roled MediaObject
 
 ### Nepal Government Modernization (NGM)
 
-- `ngm_query_judicial`: Execute SELECT queries against NGM court and court case tables
+- `ngm_query_judicial`: Execute SELECT queries against the court tables via the gated SQL plane
 - `ngm_extract_case_data`: Extract complete judicial case information to Markdown
 
 ### Likhit and Document Conversion
@@ -99,7 +102,7 @@ uv tool install git+https://github.com/Jawafdehi/jawafdehi-mcp.git
 Set the required environment variables:
 
 ```bash
-export JAWAFDEHI_API_BASE_URL="https://portal.jawafdehi.org"
+export JAWAFDEHI_API_BASE_URL="https://api.jawafdehi.org"
 export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
@@ -118,7 +121,7 @@ Add to your MCP client configuration:
       "command": "uvx",
       "args": ["jawafdehi-mcp"],
       "env": {
-        "JAWAFDEHI_API_BASE_URL": "https://portal.jawafdehi.org",
+        "JAWAFDEHI_API_BASE_URL": "https://api.jawafdehi.org",
         "JAWAFDEHI_API_TOKEN": "your-jawafdehi-api-token"
       }
     }
@@ -133,32 +136,30 @@ JSON Patch updates to existing cases by `case_id`.
 
 Both tools require `JAWAFDEHI_API_TOKEN`.
 
-### NES Queue Submissions
+### NES Entity Writes
 
-The `submit_nes_change` tool sends authenticated POST requests to Jawafdehi API's
-NES queue endpoint. Supported action values are:
+The `submit_nes_change` tool writes NES entities directly on the unified entity
+plane (the old NES *queue* endpoint and its `ADD_NAME`/`CREATE_ENTITY`/
+`UPDATE_ENTITY` actions are gone):
 
-- `ADD_NAME`
-- `CREATE_ENTITY`
-- `UPDATE_ENTITY`
+- `action=CREATE` → `POST /api/entities` with a JSON-LD `document`.
+- `action=UPDATE` → `PATCH /api/entities/{ref}` with RFC 6902 `patch_ops`
+  (adding a name is just an `add` op to `/name`).
 
 The tool uses `JAWAFDEHI_API_BASE_URL` for the API host and requires
-`JAWAFDEHI_API_TOKEN` for authentication.
+`JAWAFDEHI_API_TOKEN` (or a forwarded OIDC bearer) for authentication.
 
 ### NES Schema Discovery
 
-Use `get_nes_entity_prefixes` to fetch the currently valid NES entity prefixes,
-and `get_nes_entity_prefix_schema` to fetch the JSON schema for one prefix such
-as `person` or `organization/political_party`. Prefixes containing slashes
-(e.g. `organization/political_party`) are automatically URL-encoded by the tool
-before being sent in the request path.
-
-These tools read from `NES_API_BASE_URL`, which defaults to
-`https://nes.jawafdehi.org`.
+Use `get_nes_entity_prefixes` to fetch the currently valid NES entity prefixes.
+All entity reads (`search_nes_entities`, `get_nes_entities` → `/api/entities`,
+`get_nes_tags` → `/api/entities/tags`, `get_nes_entity_prefixes` →
+`/api/entity_prefixes`) now hit the ONE unified Jawafdehi host — the standalone
+`nes.jawafdehi.org` service and its `/api/nes` prefix were retired.
 
 ### Available Tables
 
-The following NGM judicial tables are accessible through the Jawafdehi API proxy endpoint (`/api/ngm/query_judicial`):
+The following court tables are accessible through the gated SQL plane (`/api/query/`):
 
 - `courts` - Court master table (district, high, supreme, special courts)
 - `court_cases` - Court case metadata and registration information
