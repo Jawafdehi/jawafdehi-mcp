@@ -102,7 +102,7 @@ uv tool install git+https://github.com/Jawafdehi/jawafdehi-mcp.git
 Set the required environment variables:
 
 ```bash
-export JAWAFDEHI_API_BASE_URL="https://portal.jawafdehi.org"
+export JAWAFDEHI_API_BASE_URL="https://api.jawafdehi.org"
 export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
@@ -121,7 +121,7 @@ Add to your MCP client configuration:
       "command": "uvx",
       "args": ["jawafdehi-mcp"],
       "env": {
-        "JAWAFDEHI_API_BASE_URL": "https://portal.jawafdehi.org",
+        "JAWAFDEHI_API_BASE_URL": "https://api.jawafdehi.org",
         "JAWAFDEHI_API_TOKEN": "your-jawafdehi-api-token"
       }
     }

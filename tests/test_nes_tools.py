@@ -42,10 +42,10 @@ class TestGetNESEntityPrefixesTool:
 
     @pytest.mark.asyncio
     async def test_successful_response(self, monkeypatch):
-        monkeypatch.setenv("NES_API_BASE_URL", "https://nes.example")
+        monkeypatch.setenv("JAWAFDEHI_API_BASE_URL", "https://api.example")
 
         async def fake_get(url, timeout, headers=None):
-            assert url == "https://nes.example/api/entity_prefixes"
+            assert url == "https://api.example/api/entity_prefixes"
             assert timeout == 30.0
             return httpx.Response(
                 200,

@@ -18,13 +18,10 @@ def _get_nes_base_url() -> str:
 
     Post-unification NES entities are served by the ONE Jawafdehi host under a
     bare ``/api/entities`` (the standalone ``nes.jawafdehi.org`` service + its
-    ``/api/nes`` prefix were retired in the 2026-07 hard cut). Honour the legacy
-    ``NES_API_BASE_URL`` only if explicitly set, else the unified host.
+    ``/api/nes`` prefix were retired in the 2026-07 hard cut, with no override:
+    a legacy NES base URL would silently read the frozen pre-cutover backend).
     """
-    base = os.getenv("NES_API_BASE_URL") or os.getenv(
-        "JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org"
-    )
-    return base.rstrip("/")
+    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://api.jawafdehi.org").rstrip("/")
 
 
 def _get_nes_headers() -> dict[str, str]:

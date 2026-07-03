@@ -15,9 +15,7 @@ logger = structlog.get_logger()
 
 
 def _get_jawafdehi_base_url() -> str:
-    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org").rstrip(
-        "/"
-    )
+    return os.getenv("JAWAFDEHI_API_BASE_URL", "https://api.jawafdehi.org").rstrip("/")
 
 
 def _get_jawafdehi_api_token() -> str | None:

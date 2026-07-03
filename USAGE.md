@@ -17,7 +17,7 @@ Provide `output_path` when you want the converted Markdown saved as a file.
 ### 2. Set Environment Variables
 
 ```bash
-export JAWAFDEHI_API_BASE_URL="https://portal.jawafdehi.org"
+export JAWAFDEHI_API_BASE_URL="https://api.jawafdehi.org"
 export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
@@ -39,7 +39,7 @@ Add to your MCP client's configuration file (e.g., `.kiro/settings/mcp.json`):
       "args": ["run", "jawafdehi-mcp"],
       "cwd": "/absolute/path/to/services/jawafdehi-mcp",
       "env": {
-        "JAWAFDEHI_API_BASE_URL": "https://portal.jawafdehi.org",
+        "JAWAFDEHI_API_BASE_URL": "https://api.jawafdehi.org",
         "JAWAFDEHI_API_TOKEN": "your-jawafdehi-api-token"
       }
     }

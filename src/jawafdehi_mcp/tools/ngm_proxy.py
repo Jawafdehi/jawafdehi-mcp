@@ -20,7 +20,7 @@ logger = structlog.get_logger()
 
 def get_jawafdehi_api_config() -> tuple[str, str | None]:
     """Return validated Jawafdehi API base URL and optional token."""
-    base_url = os.getenv("JAWAFDEHI_API_BASE_URL", "https://portal.jawafdehi.org")
+    base_url = os.getenv("JAWAFDEHI_API_BASE_URL", "https://api.jawafdehi.org")
     base_url = base_url.rstrip("/")
     token = os.getenv("JAWAFDEHI_API_TOKEN", "").strip() or None
 
