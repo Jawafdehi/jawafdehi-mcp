@@ -74,8 +74,16 @@ class TestVerifyBearerToken:
             oidc.verify_bearer_token(_mint(rsa_key, iss="https://evil.invalid"))
 
     def test_expired(self, rsa_key):
+        # Beyond the clock-skew leeway (_CLOCK_SKEW_LEEWAY) so it's unambiguously
+        # expired.
         with pytest.raises(oidc.OIDCError):
-            oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - 10))
+            oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - 3600))
+
+    def test_expired_within_clock_skew_leeway_is_allowed(self, rsa_key):
+        # A token just past exp (within leeway) is tolerated for clock drift.
+        skew = oidc._CLOCK_SKEW_LEEWAY - 5
+        claims = oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - skew))
+        assert claims["sub"] == "user-123"
 
     def test_missing_issuer_config(self, rsa_key, monkeypatch):
         monkeypatch.delenv("OIDC_ISSUER", raising=False)

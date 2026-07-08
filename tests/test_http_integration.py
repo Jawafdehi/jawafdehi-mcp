@@ -13,9 +13,11 @@ from jawafdehi_mcp import http_server
 from jawafdehi_mcp.http_server import (
     JawafdehiMCPServer,
     _bearer_from_headers,
+    _forwarded_host_scheme,
+    _mode_from_headers,
     _protected_resource_metadata,
 )
-from jawafdehi_mcp.identity import current_user_identity
+from jawafdehi_mcp.identity import current_request_mode, current_user_identity
 from jawafdehi_mcp.oidc import OIDCError
 from jawafdehi_mcp.request_context import jawafdehi_bearer_token
 
@@ -72,6 +74,7 @@ def captured(mcp_server, monkeypatch):
     async def _recorder(scope, receive, send):
         seen["identity"] = current_user_identity.get()
         seen["bearer"] = jawafdehi_bearer_token.get()
+        seen["mode"] = current_request_mode.get()
 
     monkeypatch.setattr(mcp_server.session_manager, "handle_request", _recorder)
     return seen
@@ -155,3 +158,112 @@ class TestProtectedResourceMetadata:
         meta = _protected_resource_metadata()
         assert meta["resource"] == "aud-1"
         assert meta["bearer_methods_supported"] == ["header"]
+
+    def test_host_aware_resource_and_scopes(self, monkeypatch):
+        monkeypatch.setenv("OIDC_API_AUDIENCE", "proj-9")
+        monkeypatch.setenv("OIDC_ISSUER", "https://auth.x.org")
+        meta = _protected_resource_metadata("https://mcp-internal.x.org")
+        assert meta["resource"] == "https://mcp-internal.x.org"
+        # Design 1a: point at Zitadel directly.
+        assert meta["authorization_servers"] == ["https://auth.x.org"]
+        # Refresh + project-audience scopes advertised.
+        assert "offline_access" in meta["scopes_supported"]
+        assert "urn:zitadel:iam:org:project:id:proj-9:aud" in meta["scopes_supported"]
+
+
+class TestHeaderHelpers:
+    def test_mode_from_headers(self):
+        assert _mode_from_headers({b"x-mcp-mode": b"internal"}) == "internal"
+        assert _mode_from_headers({b"x-mcp-mode": b"Public"}) == "public"
+        assert _mode_from_headers({}) is None
+
+    def test_forwarded_host_scheme_prefers_forwarded(self):
+        host, scheme = _forwarded_host_scheme(
+            {
+                b"x-forwarded-host": b"mcp.x.org",
+                b"host": b"internal",
+                b"x-forwarded-proto": b"https",
+            }
+        )
+        assert host == "mcp.x.org"
+        assert scheme == "https"
+
+    def test_forwarded_host_scheme_falls_back_to_host(self):
+        host, scheme = _forwarded_host_scheme({b"host": b"mcp-internal.x.org"})
+        assert host == "mcp-internal.x.org"
+        assert scheme == "https"
+
+
+class TestModeDoors:
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    async def test_internal_anonymous_gets_401_challenge(self, mcp_server):
+        send = _SendRecorder()
+        scope = _make_scope(
+            [(b"x-mcp-mode", b"internal"), (b"host", b"mcp-internal.x.org")]
+        )
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        assert send.status == 401
+        wa = dict(
+            (k.decode(), v.decode())
+            for k, v in next(
+                m["headers"]
+                for m in send.messages
+                if m["type"] == "http.response.start"
+            )
+        )
+        assert "resource_metadata=" in wa["www-authenticate"]
+        assert "mcp-internal.x.org" in wa["www-authenticate"]
+
+    async def test_public_anonymous_proceeds(self, mcp_server, captured):
+        scope = _make_scope([(b"x-mcp-mode", b"public")])
+        await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
+        assert captured["identity"] is None
+        assert captured["mode"] == "public"
+        # contextvar reset after request
+        assert current_request_mode.get() is None
+
+    async def test_legacy_anonymous_proceeds(self, mcp_server, captured):
+        scope = _make_scope([])
+        await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
+        assert captured["identity"] is None
+        assert captured["mode"] is None
+
+    async def test_public_hides_oauth_metadata(self, mcp_server):
+        send = _SendRecorder()
+        scope = _make_scope(
+            [(b"x-mcp-mode", b"public")],
+            path="/.well-known/oauth-protected-resource",
+        )
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        assert send.status == 404
+
+    async def test_internal_serves_host_aware_metadata(self, mcp_server, monkeypatch):
+        monkeypatch.setenv("OIDC_API_AUDIENCE", "proj-1")
+        monkeypatch.setenv("OIDC_ISSUER", "https://auth.x.org")
+        send = _SendRecorder()
+        scope = _make_scope(
+            [(b"x-mcp-mode", b"internal"), (b"host", b"mcp-internal.x.org")],
+            path="/.well-known/oauth-protected-resource",
+        )
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        assert send.status == 200
+        meta = json.loads(send.body)
+        assert meta["resource"] == "https://mcp-internal.x.org"
+        assert meta["authorization_servers"] == ["https://auth.x.org"]
+
+    async def test_internal_valid_token_proceeds(
+        self, mcp_server, captured, monkeypatch
+    ):
+        identity = {"sub": "u1", "email": "cw@x.org", "roles": ["contributor"]}
+
+        async def _resolve(token):
+            return identity
+
+        monkeypatch.setattr(http_server, "resolve_bearer_identity", _resolve)
+        scope = _make_scope(
+            [(b"x-mcp-mode", b"internal"), (b"authorization", b"Bearer good")]
+        )
+        await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
+        assert captured["identity"] == identity
+        assert captured["mode"] == "internal"

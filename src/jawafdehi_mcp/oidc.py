@@ -21,6 +21,11 @@ _USER_AGENT = "jawafdehi-mcp/1.0"
 
 _jwks_client: jwt.PyJWKClient | None = None
 
+# Tolerate small clock drift between us and Zitadel on exp/iat/nbf.
+_CLOCK_SKEW_LEEWAY = 30
+# Keep the JWKS fetch from hanging a request if auth.jawafdehi.org stalls.
+_JWKS_TIMEOUT = 5
+
 # Userinfo cached by token id so we call the userinfo endpoint at most once per
 # access token (not on every request).
 _userinfo_cache: dict[str, tuple[float, dict]] = {}
@@ -43,8 +48,24 @@ def _get_jwks_client() -> jwt.PyJWKClient:
         _jwks_client = jwt.PyJWKClient(
             _env("OIDC_JWKS_URL"),
             headers={"User-Agent": _USER_AGENT},
+            timeout=_JWKS_TIMEOUT,
         )
     return _jwks_client
+
+
+def _signing_key_for(token: str):
+    """Resolve the signing key, refetching JWKS once on a miss.
+
+    A ``kid`` we don't have cached almost always means Zitadel rotated its
+    signing keys; drop the cached client and refetch immediately rather than
+    failing the request and waiting for a TTL.
+    """
+    global _jwks_client
+    try:
+        return _get_jwks_client().get_signing_key_from_jwt(token)
+    except jwt.exceptions.PyJWKClientError:
+        _jwks_client = None
+        return _get_jwks_client().get_signing_key_from_jwt(token)
 
 
 def verify_bearer_token(token: str) -> dict:
@@ -60,13 +81,14 @@ def verify_bearer_token(token: str) -> dict:
     issuer = _env("OIDC_ISSUER")
     audience = _env("OIDC_API_AUDIENCE")
     try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        signing_key = _signing_key_for(token)
         return jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             audience=audience,
             issuer=issuer,
+            leeway=_CLOCK_SKEW_LEEWAY,
             options={"require": ["exp", "iss", "aud"]},
         )
     except jwt.PyJWTError as exc:
