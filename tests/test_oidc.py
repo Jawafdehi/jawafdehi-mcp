@@ -20,6 +20,7 @@ def _oidc_env(monkeypatch):
     monkeypatch.setenv("OIDC_OP_USER_ENDPOINT", "https://auth.test.invalid/userinfo")
     # Reset module caches between tests.
     oidc._jwks_client = None
+    oidc._jwks_last_refresh = 0.0
     oidc._userinfo_cache.clear()
 
 
@@ -74,13 +75,65 @@ class TestVerifyBearerToken:
             oidc.verify_bearer_token(_mint(rsa_key, iss="https://evil.invalid"))
 
     def test_expired(self, rsa_key):
+        # Beyond the clock-skew leeway (_CLOCK_SKEW_LEEWAY) so it's unambiguously
+        # expired.
         with pytest.raises(oidc.OIDCError):
-            oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - 10))
+            oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - 3600))
+
+    def test_expired_within_clock_skew_leeway_is_allowed(self, rsa_key):
+        # A token just past exp (within leeway) is tolerated for clock drift.
+        skew = oidc._CLOCK_SKEW_LEEWAY - 5
+        claims = oidc.verify_bearer_token(_mint(rsa_key, exp=int(time.time()) - skew))
+        assert claims["sub"] == "user-123"
 
     def test_missing_issuer_config(self, rsa_key, monkeypatch):
         monkeypatch.delenv("OIDC_ISSUER", raising=False)
         with pytest.raises(oidc.OIDCError):
             oidc.verify_bearer_token(_mint(rsa_key))
+
+
+class TestSigningKeyRefetch:
+    """The kid-miss JWKS refetch is rate-limited so forged/unknown kids can't
+    force a fetch per request (DoS / cache-bust)."""
+
+    def test_refetch_is_rate_limited(self, monkeypatch):
+        calls = {"sign": 0}
+
+        class _AlwaysMiss:
+            def get_signing_key_from_jwt(self, token):
+                calls["sign"] += 1
+                raise jwt.exceptions.PyJWKClientError("no matching kid")
+
+        monkeypatch.setattr(oidc, "_get_jwks_client", lambda: _AlwaysMiss())
+        oidc._jwks_last_refresh = 0.0
+
+        # First miss: allowed one refetch → initial attempt + one retry = 2.
+        with pytest.raises(jwt.exceptions.PyJWKClientError):
+            oidc._signing_key_for("tok")
+        first = calls["sign"]
+        assert first == 2
+
+        # Immediate second miss: within the interval → no refetch, just the one
+        # initial attempt (not 2).
+        with pytest.raises(jwt.exceptions.PyJWKClientError):
+            oidc._signing_key_for("tok")
+        assert calls["sign"] - first == 1
+
+    def test_refetch_allowed_after_interval(self, monkeypatch):
+        calls = {"sign": 0}
+
+        class _AlwaysMiss:
+            def get_signing_key_from_jwt(self, token):
+                calls["sign"] += 1
+                raise jwt.exceptions.PyJWKClientError("no matching kid")
+
+        monkeypatch.setattr(oidc, "_get_jwks_client", lambda: _AlwaysMiss())
+        # Pretend the last refetch was long enough ago.
+        oidc._jwks_last_refresh = time.monotonic() - oidc._JWKS_MIN_REFRESH_INTERVAL - 1
+        with pytest.raises(jwt.exceptions.PyJWKClientError):
+            oidc._signing_key_for("tok")
+        # Interval elapsed → refetch attempted (initial + retry = 2).
+        assert calls["sign"] == 2
 
 
 class TestBuildIdentity:

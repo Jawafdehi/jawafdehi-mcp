@@ -11,7 +11,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from .identity import (
-    PUBLIC_READ_ONLY_TOOL_NAMES,
+    current_request_mode,
     current_user_identity,
     get_allowed_tool_names,
 )
@@ -72,26 +72,19 @@ def _has_api_token() -> bool:
 
 def _get_allowed_tools() -> list[BaseTool]:
     identity = current_user_identity.get()
-    if identity is not None:
-        allowed = get_allowed_tool_names(identity, ALL_TOOL_NAMES)
-        return [tool for tool in TOOLS if tool.name in allowed]
-
-    if _has_api_token():
+    if identity is None and _has_api_token():
         return TOOLS
-
-    return [tool for tool in TOOLS if tool.name in PUBLIC_READ_ONLY_TOOL_NAMES]
+    mode = current_request_mode.get()
+    allowed = get_allowed_tool_names(identity, ALL_TOOL_NAMES, mode)
+    return [tool for tool in TOOLS if tool.name in allowed]
 
 
 def _is_tool_allowed(name: str) -> bool:
     identity = current_user_identity.get()
-    if identity is not None:
-        allowed = get_allowed_tool_names(identity, ALL_TOOL_NAMES)
-        return name in allowed
-
-    if _has_api_token():
+    if identity is None and _has_api_token():
         return True
-
-    return name in PUBLIC_READ_ONLY_TOOL_NAMES
+    mode = current_request_mode.get()
+    return name in get_allowed_tool_names(identity, ALL_TOOL_NAMES, mode)
 
 
 def _bind_audit_context(identity: dict | None) -> None:
