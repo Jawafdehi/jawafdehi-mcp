@@ -7,6 +7,7 @@ jawafdehi-api's OIDCJWTAuthentication so both services trust the same tokens.
 
 import asyncio
 import os
+import threading
 import time
 
 import httpx
@@ -25,6 +26,14 @@ _jwks_client: jwt.PyJWKClient | None = None
 _CLOCK_SKEW_LEEWAY = 30
 # Keep the JWKS fetch from hanging a request if auth.jawafdehi.org stalls.
 _JWKS_TIMEOUT = 5
+# Minimum seconds between forced JWKS refetches. A cached ``kid`` miss triggers a
+# refetch (to pick up key rotation), but no more often than this — so an
+# attacker streaming tokens with random/unknown ``kid``s cannot bust the JWK
+# cache and force a Zitadel fetch (and a _JWKS_TIMEOUT-long thread stall) per
+# request.
+_JWKS_MIN_REFRESH_INTERVAL = 60
+_jwks_refresh_lock = threading.Lock()
+_jwks_last_refresh = 0.0
 
 # Userinfo cached by token id so we call the userinfo endpoint at most once per
 # access token (not on every request).
@@ -54,17 +63,26 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 
 
 def _signing_key_for(token: str):
-    """Resolve the signing key, refetching JWKS once on a miss.
+    """Resolve the signing key, refetching JWKS on a miss at most once per
+    ``_JWKS_MIN_REFRESH_INTERVAL``.
 
-    A ``kid`` we don't have cached almost always means Zitadel rotated its
-    signing keys; drop the cached client and refetch immediately rather than
-    failing the request and waiting for a TTL.
+    A ``kid`` we don't have cached usually means Zitadel rotated its signing
+    keys, so we drop the cached client and refetch to pick up the new keys.
+    But an unknown ``kid`` is also what a forged token carries, so the refetch
+    is rate-limited: within the interval we reject rather than refetch, which
+    keeps an attacker from turning random-``kid`` tokens into an unbounded
+    stream of JWKS fetches.
     """
-    global _jwks_client
+    global _jwks_client, _jwks_last_refresh
     try:
         return _get_jwks_client().get_signing_key_from_jwt(token)
     except jwt.exceptions.PyJWKClientError:
-        _jwks_client = None
+        with _jwks_refresh_lock:
+            now = time.monotonic()
+            if now - _jwks_last_refresh < _JWKS_MIN_REFRESH_INTERVAL:
+                raise
+            _jwks_last_refresh = now
+            _jwks_client = None
         return _get_jwks_client().get_signing_key_from_jwt(token)
 
 

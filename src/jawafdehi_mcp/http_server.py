@@ -26,11 +26,17 @@ from .server import app as mcp_app
 logger = structlog.get_logger()
 
 WELL_KNOWN_PROTECTED_RESOURCE = "/.well-known/oauth-protected-resource"
-# Injected by the ingress (never client-trusted — Traefik overwrites it):
+# Injected by the ingress (Traefik overwrites it, so a client value can't win):
 #   "internal" -> OAuth-gated door; unauthenticated requests get a 401 challenge
 #   "public"   -> anonymous door; restricted tools, OAuth never advertised
-#   absent     -> legacy/OWUI-facing in-cluster behavior (unchanged)
+#   absent     -> falls back to MCP_DEFAULT_MODE (the per-deployment floor),
+#                 else legacy/OWUI-facing in-cluster behavior (unchanged)
 MODE_HEADER = b"x-mcp-mode"
+# Per-deployment safe floor for the mode when the header is missing. Set to
+# "public" on the internet-facing deployment so a stripped/absent header can
+# never widen anonymous access to the fuller legacy read-only set (which
+# includes OCR + SQL); unset for the in-cluster OWUI deploy (legacy behavior).
+MODE_DEFAULT_ENV = "MCP_DEFAULT_MODE"
 
 
 def _bearer_from_headers(headers: dict[bytes, bytes]) -> str | None:
@@ -45,14 +51,19 @@ def _bearer_from_headers(headers: dict[bytes, bytes]) -> str | None:
 
 
 def _mode_from_headers(headers: dict[bytes, bytes]) -> str | None:
+    """Resolve the door mode: the ingress-injected header, else the
+    per-deployment MCP_DEFAULT_MODE floor (fail-safe when the header is
+    stripped/absent), else None (legacy in-cluster / stdio)."""
     raw = headers.get(MODE_HEADER, b"").decode(errors="replace").strip().lower()
-    return raw or None
+    if raw:
+        return raw
+    return (os.getenv(MODE_DEFAULT_ENV) or "").strip().lower() or None
 
 
 def _forwarded_host_scheme(headers: dict[bytes, bytes]) -> tuple[str | None, str]:
     """The public host + scheme this request was addressed to, from the edge
-    proxy headers. Used to build absolute RFC 9728 URLs so the metadata is
-    correct on whichever hostname (mcp / mcp-internal) served the request."""
+    proxy headers. Only a fallback for _canonical_base_url when OIDC_RESOURCE is
+    unset (dev / stdio) — not trusted in production."""
     raw_host = headers.get(b"x-forwarded-host") or headers.get(b"host")
     host = raw_host.decode(errors="replace").split(",")[0].strip() if raw_host else None
     raw_proto = headers.get(b"x-forwarded-proto", b"https")
@@ -60,20 +71,34 @@ def _forwarded_host_scheme(headers: dict[bytes, bytes]) -> tuple[str | None, str
     return host, scheme
 
 
-def _resource_metadata_url(host: str | None, scheme: str) -> str:
-    return f"{scheme}://{host}{WELL_KNOWN_PROTECTED_RESOURCE}" if host else ""
+def _canonical_base_url(headers: dict[bytes, bytes]) -> str | None:
+    """Absolute base URL of this MCP server for RFC 9728 metadata.
+
+    Prefer the trusted, configured OIDC_RESOURCE so the advertised resource and
+    the WWW-Authenticate ``resource_metadata`` pointer never derive from a
+    client-influenced Host / X-Forwarded-Host (which could otherwise advertise
+    an attacker's discovery URL). Fall back to the request host only when
+    unconfigured (dev / stdio)."""
+    configured = (os.getenv("OIDC_RESOURCE") or "").strip()
+    if configured:
+        return configured.rstrip("/")
+    host, scheme = _forwarded_host_scheme(headers)
+    return f"{scheme}://{host}" if host else None
 
 
-def _protected_resource_metadata(resource_url: str | None = None) -> dict:
+def _resource_metadata_url(base_url: str | None) -> str:
+    return f"{base_url}{WELL_KNOWN_PROTECTED_RESOURCE}" if base_url else ""
+
+
+def _protected_resource_metadata(base_url: str | None = None) -> dict:
     """RFC 9728 Protected Resource Metadata so OAuth clients discover the
     authorization server (Zitadel, Design 1a) and the scopes to request.
 
-    ``resource_url`` is the absolute canonical URL of this MCP server, derived
-    from the request Host; falls back to OIDC_RESOURCE/OIDC_API_AUDIENCE for
-    stdio / hostless callers."""
+    ``base_url`` is the absolute canonical URL of this MCP server (see
+    _canonical_base_url); falls back to OIDC_API_AUDIENCE for hostless callers."""
     audience = (os.getenv("OIDC_API_AUDIENCE") or "").strip()
     issuer = (os.getenv("OIDC_ISSUER") or "").strip()
-    resource = resource_url or (os.getenv("OIDC_RESOURCE") or audience or "").strip()
+    resource = base_url or audience
     # offline_access must be advertised for clients (e.g. Claude Code) to request
     # a refresh token; the project-aud urn puts our project id in the token
     # audience so the API + this server accept the bearer.
@@ -160,9 +185,8 @@ class JawafdehiMCPServer:
                     send, 404, [("content-type", "text/plain")], b"not found"
                 )
                 return
-            host, scheme = _forwarded_host_scheme(headers)
-            resource_url = f"{scheme}://{host}" if host else None
-            await self._send_json(send, 200, _protected_resource_metadata(resource_url))
+            base = _canonical_base_url(headers)
+            await self._send_json(send, 200, _protected_resource_metadata(base))
             return
 
         token = _bearer_from_headers(headers)
@@ -171,8 +195,7 @@ class JawafdehiMCPServer:
         # begins the OAuth flow (clients only start auth on a 401/403).
         if not token and mode == "internal":
             await receive()
-            host, scheme = _forwarded_host_scheme(headers)
-            rm_url = _resource_metadata_url(host, scheme)
+            rm_url = _resource_metadata_url(_canonical_base_url(headers))
             challenge = f'Bearer resource_metadata="{rm_url}"' if rm_url else "Bearer"
             await self._send_json(
                 send,
@@ -192,8 +215,7 @@ class JawafdehiMCPServer:
                 await receive()
                 challenge = 'Bearer error="invalid_token"'
                 if mode == "internal":
-                    host, scheme = _forwarded_host_scheme(headers)
-                    rm_url = _resource_metadata_url(host, scheme)
+                    rm_url = _resource_metadata_url(_canonical_base_url(headers))
                     if rm_url:
                         challenge += f', resource_metadata="{rm_url}"'
                 await self._send_json(

@@ -13,6 +13,7 @@ from jawafdehi_mcp import http_server
 from jawafdehi_mcp.http_server import (
     JawafdehiMCPServer,
     _bearer_from_headers,
+    _canonical_base_url,
     _forwarded_host_scheme,
     _mode_from_headers,
     _protected_resource_metadata,
@@ -193,6 +194,26 @@ class TestHeaderHelpers:
         assert host == "mcp-internal.x.org"
         assert scheme == "https"
 
+    def test_mode_defaults_to_env_floor(self, monkeypatch):
+        monkeypatch.setenv("MCP_DEFAULT_MODE", "public")
+        # Missing header falls back to the deployment floor...
+        assert _mode_from_headers({}) == "public"
+        # ...but an explicit ingress-injected header still wins.
+        assert _mode_from_headers({b"x-mcp-mode": b"internal"}) == "internal"
+
+    def test_canonical_base_prefers_configured_over_client_host(self, monkeypatch):
+        monkeypatch.setenv("OIDC_RESOURCE", "https://mcp-internal.jawafdehi.org")
+        # A spoofed X-Forwarded-Host / Host must NOT steer the advertised URL.
+        base = _canonical_base_url(
+            {b"x-forwarded-host": b"evil.example", b"host": b"evil.example"}
+        )
+        assert base == "https://mcp-internal.jawafdehi.org"
+
+    def test_canonical_base_falls_back_to_host_when_unset(self, monkeypatch):
+        monkeypatch.delenv("OIDC_RESOURCE", raising=False)
+        base = _canonical_base_url({b"host": b"mcp-internal.x.org"})
+        assert base == "https://mcp-internal.x.org"
+
 
 class TestModeDoors:
     pytestmark = pytest.mark.asyncio(loop_scope="function")
@@ -228,6 +249,24 @@ class TestModeDoors:
         await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
         assert captured["identity"] is None
         assert captured["mode"] is None
+
+    async def test_metadata_ignores_spoofed_host_when_configured(
+        self, mcp_server, monkeypatch
+    ):
+        monkeypatch.setenv("OIDC_RESOURCE", "https://mcp-internal.jawafdehi.org")
+        monkeypatch.setenv("OIDC_ISSUER", "https://auth.x.org")
+        monkeypatch.setenv("OIDC_API_AUDIENCE", "proj-1")
+        send = _SendRecorder()
+        scope = _make_scope(
+            [
+                (b"x-mcp-mode", b"internal"),
+                (b"x-forwarded-host", b"evil.example"),
+            ],
+            path="/.well-known/oauth-protected-resource",
+        )
+        await mcp_server._handle_http(scope, _dummy_receive, send)
+        meta = json.loads(send.body)
+        assert meta["resource"] == "https://mcp-internal.jawafdehi.org"
 
     async def test_public_hides_oauth_metadata(self, mcp_server):
         send = _SendRecorder()
