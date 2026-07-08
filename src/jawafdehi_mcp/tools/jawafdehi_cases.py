@@ -117,7 +117,9 @@ def _shape_case_search_hit(hit: dict[str, Any]) -> dict[str, Any]:
     Keeps a ``slug`` (for get_jawafdehi_case), a flattened title/snippet, and
     the case_type/date/url/score so the assistant can present and link results.
     """
-    extra = hit.get("extra") or {}
+    extra = hit.get("extra")
+    if not isinstance(extra, dict):
+        extra = {}
     return {
         "slug": _slug_from_search_hit(hit),
         "title": _flatten_lang_map(hit.get("title")),
@@ -199,11 +201,20 @@ class SearchJawafdehiCasesTool(BaseTool):
                 response.raise_for_status()
                 data = response.json()
 
-            results = data.get("results") or []
+            # Defensive: a well-behaved /api/search/ returns a JSON object with a
+            # list of dict hits, but never trust the shape blindly.
+            if not isinstance(data, dict):
+                data = {}
+            raw_results = data.get("results")
+            results = raw_results if isinstance(raw_results, list) else []
             payload = {
                 "count": data.get("count"),
                 "page": data.get("page"),
-                "results": [_shape_case_search_hit(hit) for hit in results],
+                "results": [
+                    _shape_case_search_hit(hit)
+                    for hit in results
+                    if isinstance(hit, dict)
+                ],
             }
             return _json_text_content(payload)
         except httpx.HTTPError as e:
