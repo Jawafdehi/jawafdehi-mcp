@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,61 @@ def _build_http_error_payload(response: httpx.Response, prefix: str) -> dict[str
     }
 
 
+def _flatten_lang_map(value: Any) -> str:
+    """Flatten a unified-search language map ({en, ne}) to a single string.
+
+    Prefers English, then Nepali, then any non-empty value. A plain string is
+    returned as-is; anything else becomes "".
+    """
+    if isinstance(value, dict):
+        for lang in ("en", "ne"):
+            text = value.get(lang)
+            if isinstance(text, str) and text:
+                return text
+        for text in value.values():
+            if isinstance(text, str) and text:
+                return text
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _slug_from_search_hit(hit: dict[str, Any]) -> str:
+    """Extract a case slug from a unified-search hit.
+
+    The /api/search/ result carries the slug inside ``api_url``
+    (``/api/cases/<slug>/``) or ``url`` (``/case/<slug>``) — it has no bare
+    ``slug`` field. get_jawafdehi_case needs the slug, so derive it here.
+    """
+    for key, pattern in (
+        ("api_url", r"/api/cases/([^/]+)/?$"),
+        ("url", r"/case/([^/]+)/?$"),
+    ):
+        value = hit.get(key)
+        if isinstance(value, str):
+            match = re.search(pattern, value)
+            if match:
+                return match.group(1)
+    return ""
+
+
+def _shape_case_search_hit(hit: dict[str, Any]) -> dict[str, Any]:
+    """Map a raw /api/search/ case hit to the case shape the tool returns.
+
+    Keeps a ``slug`` (for get_jawafdehi_case), a flattened title/snippet, and
+    the case_type/date/url/score so the assistant can present and link results.
+    """
+    extra = hit.get("extra") or {}
+    return {
+        "slug": _slug_from_search_hit(hit),
+        "title": _flatten_lang_map(hit.get("title")),
+        "snippet": _flatten_lang_map(hit.get("snippet")),
+        "case_type": extra.get("case_type"),
+        "date": extra.get("date"),
+        "url": hit.get("url"),
+        "score": hit.get("score"),
+    }
+
+
 class SearchJawafdehiCasesTool(BaseTool):
     """Tool for searching Jawafdehi accountability cases."""
 
@@ -112,20 +168,28 @@ class SearchJawafdehiCasesTool(BaseTool):
         }
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
-        query_params = {"case_type": "CORRUPTION"}
+        # Query the unified OpenSearch plane (/api/search/), NOT the legacy
+        # /api/cases/ list filter. That list filter is a plain ORM icontains
+        # over title/description that misses Nepali-script titles — English
+        # queries returned 0 results — and DRF 404s on an out-of-range page
+        # (BB-03). /api/search/ is the bilingual, ranked search and returns an
+        # empty page instead of a 404.
+        query_params: dict[str, str] = {"type": "case", "case_type": "CORRUPTION"}
 
-        if "search" in arguments and arguments["search"]:
-            query_params["search"] = arguments["search"]
+        search = arguments.get("search")
+        if search:
+            query_params["q"] = str(search)
 
-        if "tags" in arguments and arguments["tags"]:
-            query_params["tags"] = arguments["tags"]
+        tags = arguments.get("tags")
+        if tags:
+            query_params["tags"] = str(tags)
 
         if "page" in arguments:
             query_params["page"] = str(arguments["page"])
 
         query_string = urllib.parse.urlencode(query_params)
         base_url = _get_jawafdehi_base_url()
-        url = f"{base_url.rstrip('/')}/api/cases/?{query_string}"
+        url = f"{base_url.rstrip('/')}/api/search/?{query_string}"
 
         try:
             async with httpx.AsyncClient() as client:
@@ -135,7 +199,13 @@ class SearchJawafdehiCasesTool(BaseTool):
                 response.raise_for_status()
                 data = response.json()
 
-                return _json_text_content(data)
+            results = data.get("results") or []
+            payload = {
+                "count": data.get("count"),
+                "page": data.get("page"),
+                "results": [_shape_case_search_hit(hit) for hit in results],
+            }
+            return _json_text_content(payload)
         except httpx.HTTPError as e:
             logger.error("jawafdehi_search_http_error", error=str(e))
             return _error_text_content(
