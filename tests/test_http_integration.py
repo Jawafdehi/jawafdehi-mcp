@@ -20,7 +20,7 @@ from jawafdehi_mcp.http_server import (
 )
 from jawafdehi_mcp.identity import current_request_mode, current_user_identity
 from jawafdehi_mcp.oidc import OIDCError
-from jawafdehi_mcp.request_context import jawafdehi_bearer_token
+from jawafdehi_mcp.request_context import current_transport, jawafdehi_bearer_token
 
 
 def _make_scope(headers=None, path="/"):
@@ -76,6 +76,7 @@ def captured(mcp_server, monkeypatch):
         seen["identity"] = current_user_identity.get()
         seen["bearer"] = jawafdehi_bearer_token.get()
         seen["mode"] = current_request_mode.get()
+        seen["transport"] = current_transport.get()
 
     monkeypatch.setattr(mcp_server.session_manager, "handle_request", _recorder)
     return seen
@@ -109,8 +110,10 @@ class TestMiddleware:
 
         assert captured["identity"] == identity
         assert captured["bearer"] == "good-token"
+        assert captured["transport"] == "http"
         # contextvars reset after the request
         assert current_user_identity.get() is None
+        assert current_transport.get() is None
         assert jawafdehi_bearer_token.get() is None
 
     async def test_invalid_bearer_returns_401(self, mcp_server, monkeypatch):
@@ -132,6 +135,7 @@ class TestMiddleware:
         await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
         assert captured["identity"] is None
         assert captured["bearer"] is None
+        assert captured["transport"] == "http"
 
     async def test_health_endpoint(self, mcp_server):
         send = _SendRecorder()

@@ -20,7 +20,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from .identity import current_request_mode, current_user_identity
 from .oidc import OIDCError, resolve_bearer_identity
-from .request_context import jawafdehi_bearer_token
+from .request_context import current_transport, jawafdehi_bearer_token
 from .server import app as mcp_app
 
 logger = structlog.get_logger()
@@ -207,6 +207,7 @@ class JawafdehiMCPServer:
 
         token_ctx = None
         identity_ctx = None
+        transport_ctx = None
 
         if token:
             try:
@@ -229,9 +230,11 @@ class JawafdehiMCPServer:
             identity_ctx = current_user_identity.set(identity)
 
         mode_ctx = current_request_mode.set(mode)
+        transport_ctx = current_transport.set("http")
         try:
             await self.session_manager.handle_request(scope, receive, send)
         finally:
+            current_transport.reset(transport_ctx)
             current_request_mode.reset(mode_ctx)
             if identity_ctx is not None:
                 current_user_identity.reset(identity_ctx)

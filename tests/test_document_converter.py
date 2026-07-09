@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from jawafdehi_mcp.request_context import current_transport
 from jawafdehi_mcp.tools.document_converter import DocumentConverterTool
 
 
@@ -188,9 +189,13 @@ class TestDocumentConverterTool:
             mock_converter = MagicMock()
             mock_converter.convert_uri.return_value = mock_result
             mock_markitdown.return_value = mock_converter
-            result = await self.tool.execute(
-                {"file_path": str(pdf_file), "output_path": str(output_file)}
-            )
+            token = current_transport.set("stdio")
+            try:
+                result = await self.tool.execute(
+                    {"file_path": str(pdf_file), "output_path": str(output_file)}
+                )
+            finally:
+                current_transport.reset(token)
 
         assert len(result) == 1
         assert "written to" in result[0].text.lower()
@@ -262,6 +267,31 @@ class TestDocumentConverterTool:
         mock_converter.convert_uri.assert_called_once_with(pdf_file.resolve().as_uri())
 
     @pytest.mark.asyncio
+    async def test_rejects_output_path_on_http_transport(self, tmp_path):
+        """HTTP-hosted MCP servers must not write markdown files."""
+        output_file = tmp_path / "result.md"
+
+        with patch(
+            "jawafdehi_mcp.tools.document_converter.MarkItDown"
+        ) as mock_markitdown:
+            token = current_transport.set("http")
+            try:
+                result = await self.tool.execute(
+                    {
+                        "uri": "https://example.com/document.pdf",
+                        "output_path": str(output_file),
+                    }
+                )
+            finally:
+                current_transport.reset(token)
+
+        assert len(result) == 1
+        assert "only supported by local stdio" in result[0].text
+        assert "must not write files" in result[0].text
+        assert not output_file.exists()
+        mock_markitdown.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_rejects_output_path_matching_source_file(self, tmp_path):
         """Explicit output_path must not overwrite the source file."""
         markdown_file = tmp_path / "already.md"
@@ -278,12 +308,16 @@ class TestDocumentConverterTool:
             mock_converter.convert_uri.return_value = mock_result
             mock_markitdown.return_value = mock_converter
 
-            result = await self.tool.execute(
-                {
-                    "file_path": str(markdown_file),
-                    "output_path": str(markdown_file),
-                }
-            )
+            token = current_transport.set("stdio")
+            try:
+                result = await self.tool.execute(
+                    {
+                        "file_path": str(markdown_file),
+                        "output_path": str(markdown_file),
+                    }
+                )
+            finally:
+                current_transport.reset(token)
 
         assert len(result) == 1
         assert "output_path must differ from the source file" in result[0].text
