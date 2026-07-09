@@ -9,6 +9,7 @@ import structlog
 from markitdown import MarkItDown
 from mcp.types import TextContent
 
+from ..request_context import current_transport
 from .base import BaseTool
 
 logger = structlog.get_logger()
@@ -38,7 +39,7 @@ class DocumentConverterTool(BaseTool):
             "- Data URIs such as `data:text/plain;base64,...`\n\n"
             "**Output behavior:**\n"
             "- Returns Markdown directly by default\n"
-            "- Set `output_path` to save the converted Markdown to a file instead\n\n"
+            "- Set `output_path` to save the converted Markdown to a file only when running via local stdio\n\n"
             "**Page selection (PDFs only):**\n"
             "- Use `pages` to convert a subset of pages from a PDF\n"
             '- Format: single page ("5") or page range ("1-3")\n'
@@ -76,8 +77,9 @@ class DocumentConverterTool(BaseTool):
                     "type": "string",
                     "description": (
                         "Optional. Absolute path to write the converted Markdown file. "
-                        "Parent directories are created automatically. "
-                        "If not provided, the markdown content is returned directly."
+                        "Only supported by local stdio servers; HTTP servers refuse "
+                        "filesystem writes and return markdown directly when omitted. "
+                        "Parent directories are created automatically."
                     ),
                 },
                 "pages": {
@@ -142,6 +144,10 @@ class DocumentConverterTool(BaseTool):
 
         return None
 
+    def _is_local_stdio(self) -> bool:
+        """Return whether this call is running in a local stdio MCP process."""
+        return current_transport.get() == "stdio"
+
     async def _convert_with_markitdown(
         self, source: str, arguments: dict[str, Any]
     ) -> tuple[str, str | None]:
@@ -182,6 +188,19 @@ class DocumentConverterTool(BaseTool):
 
     async def execute(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Execute document conversion through MarkItDown."""
+        output_path = self._get_output_path(arguments)
+        if output_path and not self._is_local_stdio():
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        "Error: output_path is only supported by local stdio MCP servers. "
+                        "HTTP-hosted MCP servers must not write files; omit output_path "
+                        "to return Markdown in the response."
+                    ),
+                )
+            ]
+
         # Get source path/URI
         try:
             source, is_local_file = self._get_source_path(arguments)
@@ -221,7 +240,6 @@ class DocumentConverterTool(BaseTool):
             ]
 
         # Write to output file only when explicitly requested
-        output_path = self._get_output_path(arguments)
         if output_path:
             try:
                 if is_local_file:

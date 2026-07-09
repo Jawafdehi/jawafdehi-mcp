@@ -16,6 +16,7 @@ from .identity import (
     get_allowed_tool_names,
 )
 from .logging_setup import setup_logging
+from .request_context import current_transport
 
 setup_logging()
 
@@ -154,9 +155,13 @@ def main():
 
     async def run():
         async with stdio_server() as (read_stream, write_stream):
-            await app.run(
-                read_stream, write_stream, app.create_initialization_options()
-            )
+            transport_ctx = current_transport.set("stdio")
+            try:
+                await app.run(
+                    read_stream, write_stream, app.create_initialization_options()
+                )
+            finally:
+                current_transport.reset(transport_ctx)
 
     asyncio.run(run())
 

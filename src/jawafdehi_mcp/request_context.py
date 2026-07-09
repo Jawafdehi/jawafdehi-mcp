@@ -1,6 +1,10 @@
-"""Request-scoped context for the HTTP transport — bearer-token forwarding."""
+"""Request-scoped context for MCP transports and bearer-token forwarding."""
 
 from contextvars import ContextVar
+
+current_transport: ContextVar[str | None] = ContextVar(
+    "current_transport", default=None
+)
 
 jawafdehi_bearer_token: ContextVar[str | None] = ContextVar(
     "jawafdehi_bearer_token", default=None
