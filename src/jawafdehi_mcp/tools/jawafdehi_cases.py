@@ -218,15 +218,15 @@ class SearchJawafdehiCasesTool(BaseTool):
                     # Surface the API's own error body (status + detail) instead of
                     # a bare status string, so failures like an expired forwarded
                     # token ({"detail": "Token has expired."}) are diagnosable.
+                    error_payload = _build_http_error_payload(
+                        response, "Error accessing Jawafdehi search API."
+                    )
                     logger.error(
                         "jawafdehi_search_http_error",
                         status_code=response.status_code,
+                        details=error_payload.get("details"),
                     )
-                    return _json_text_content(
-                        _build_http_error_payload(
-                            response, "Error accessing Jawafdehi search API."
-                        )
-                    )
+                    return _json_text_content(error_payload)
                 data = response.json()
 
             # Defensive: a well-behaved /api/search/ returns a JSON object with a
