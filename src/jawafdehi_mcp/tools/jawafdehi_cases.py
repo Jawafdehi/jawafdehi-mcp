@@ -141,8 +141,9 @@ class SearchJawafdehiCasesTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Search for published Jawafdehi accountability cases (corruption) "
-            "by typing keywords or tags."
+            "Search published Jawafdehi accountability cases by keywords or tags. "
+            "Covers every case type (corruption, tax evasion, and others); pass "
+            "case_type only to narrow the results to a single type."
         )
 
     @property
@@ -161,6 +162,14 @@ class SearchJawafdehiCasesTool(BaseTool):
                     "type": "string",
                     "description": "Filter cases containing a specific tag.",
                 },
+                "case_type": {
+                    "type": "string",
+                    "description": (
+                        "Optional. Restrict results to one case type "
+                        "(e.g. CORRUPTION, TAX_EVASION, PROMISES). Omit to search "
+                        "across all case types."
+                    ),
+                },
                 "page": {
                     "type": "integer",
                     "description": "Page number for pagination (defaults to 1).",
@@ -176,7 +185,7 @@ class SearchJawafdehiCasesTool(BaseTool):
         # queries returned 0 results — and DRF 404s on an out-of-range page
         # (BB-03). /api/search/ is the bilingual, ranked search and returns an
         # empty page instead of a 404.
-        query_params: dict[str, str] = {"type": "case", "case_type": "CORRUPTION"}
+        query_params: dict[str, str] = {"type": "case"}
 
         search = arguments.get("search")
         if search:
@@ -185,6 +194,13 @@ class SearchJawafdehiCasesTool(BaseTool):
         tags = arguments.get("tags")
         if tags:
             query_params["tags"] = str(tags)
+
+        # Optional case-type filter — default is NO filter so every case type is
+        # searchable. A previously hard-coded case_type=CORRUPTION silently hid
+        # tax-evasion and other non-corruption cases from search and chat (BB-03).
+        case_type = arguments.get("case_type")
+        if case_type:
+            query_params["case_type"] = str(case_type)
 
         if "page" in arguments:
             query_params["page"] = str(arguments["page"])
@@ -198,7 +214,19 @@ class SearchJawafdehiCasesTool(BaseTool):
                 response = await client.get(
                     url, headers=_get_auth_headers(), timeout=30.0
                 )
-                response.raise_for_status()
+                if not response.is_success:
+                    # Surface the API's own error body (status + detail) instead of
+                    # a bare status string, so failures like an expired forwarded
+                    # token ({"detail": "Token has expired."}) are diagnosable.
+                    error_payload = _build_http_error_payload(
+                        response, "Error accessing Jawafdehi search API."
+                    )
+                    logger.error(
+                        "jawafdehi_search_http_error",
+                        status_code=response.status_code,
+                        details=error_payload.get("details"),
+                    )
+                    return _json_text_content(error_payload)
                 data = response.json()
 
             # Defensive: a well-behaved /api/search/ returns a JSON object with a
@@ -296,7 +324,20 @@ class GetJawafdehiCaseTool(BaseTool):
                 )
                 if response.status_code == 404:
                     return _error_text_content(f"Case not found ({lookup_label}).")
-                response.raise_for_status()
+                if not response.is_success:
+                    # Surface the API's error body (e.g. an expired forwarded token
+                    # → {"detail": "Token has expired."}) rather than a bare status.
+                    error_payload = _build_http_error_payload(
+                        response,
+                        f"Error accessing Jawafdehi case API ({lookup_label}).",
+                    )
+                    logger.error(
+                        "jawafdehi_get_case_http_error",
+                        lookup_label=lookup_label,
+                        status_code=response.status_code,
+                        details=error_payload.get("details"),
+                    )
+                    return _json_text_content(error_payload)
                 return _json_text_content(response.json())
         except httpx.HTTPError as e:
             logger.error(
