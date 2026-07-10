@@ -7,7 +7,6 @@ import sys
 import structlog
 
 SERVICE_NAME = "jawafdehi-mcp"
-SENTRY_DSN = "https://f56afa3cccf0b71c8a09b1dc5a596d4a@o4511364048027648.ingest.de.sentry.io/4511366946553936"
 
 
 def _get_version() -> str:
@@ -45,14 +44,20 @@ def _sentry_processor(logger, method_name, event_dict):
 
 
 def _init_sentry() -> None:
-    sentry_dsn = os.getenv("SENTRY_DSN", SENTRY_DSN).strip()
+    # Opt-in error reporting: only initialize when a DSN is explicitly provided
+    # (prod injects SENTRY_DSN via the jawafdehi-mcp-env secret). Local and
+    # stdio-bridge dev runs leave it unset and stay silent — no events are
+    # shipped from developer machines.
+    sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+    if not sentry_dsn:
+        return
 
     try:
         import sentry_sdk
 
         sentry_sdk.init(
             dsn=sentry_dsn,
-            environment=os.getenv("SENTRY_ENVIRONMENT", "development"),
+            environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
             profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
             release=os.getenv("SENTRY_RELEASE", f"{SERVICE_NAME}@{_get_version()}"),
