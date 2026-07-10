@@ -327,17 +327,17 @@ class GetJawafdehiCaseTool(BaseTool):
                 if not response.is_success:
                     # Surface the API's error body (e.g. an expired forwarded token
                     # → {"detail": "Token has expired."}) rather than a bare status.
+                    error_payload = _build_http_error_payload(
+                        response,
+                        f"Error accessing Jawafdehi case API ({lookup_label}).",
+                    )
                     logger.error(
                         "jawafdehi_get_case_http_error",
                         lookup_label=lookup_label,
                         status_code=response.status_code,
+                        details=error_payload.get("details"),
                     )
-                    return _json_text_content(
-                        _build_http_error_payload(
-                            response,
-                            f"Error accessing Jawafdehi case API ({lookup_label}).",
-                        )
-                    )
+                    return _json_text_content(error_payload)
                 return _json_text_content(response.json())
         except httpx.HTTPError as e:
             logger.error(
