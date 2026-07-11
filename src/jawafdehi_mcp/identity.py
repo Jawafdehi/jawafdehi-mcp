@@ -61,9 +61,13 @@ def anonymous_tool_names(mode: str | None) -> set[str]:
     return PUBLIC_READ_ONLY_TOOL_NAMES
 
 
-# Zitadel role keys are lowercase (admin, contributor, moderator, ...); matching
-# is case-insensitive so legacy capitalized names also work.
-_DEFAULT_WRITE_ROLES = ("contributor", "admin", "moderator")
+# Zitadel role keys are lowercase; matching is case-insensitive so capitalized
+# Django group names also work. v3 authz model: the single content-staff role is
+# `caseworker` (the canonical Zitadel key going forward). `contributor` and
+# `moderator` are retained as accepted synonyms — the backend role->group map
+# still folds both onto the Caseworker group — so a token bearing any of them
+# gets the same write-tool access it gets on the API. `admin` is the superuser.
+_DEFAULT_WRITE_ROLES = ("caseworker", "contributor", "moderator", "admin")
 
 
 def _write_role_names() -> set[str]:
@@ -80,9 +84,6 @@ def _write_role_names() -> set[str]:
         else list(_DEFAULT_WRITE_ROLES)
     )
     return {name.lower() for name in names}
-
-
-CASEWORKER_ROLE_NAMES: set[str] = _write_role_names()
 
 
 def role_has_write_access(roles: list[str]) -> bool:
