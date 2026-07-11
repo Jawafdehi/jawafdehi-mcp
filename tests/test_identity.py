@@ -1,7 +1,6 @@
 """Tests for the role/tool-gating identity module."""
 
 from jawafdehi_mcp.identity import (
-    CASEWORKER_ROLE_NAMES,
     PUBLIC_HOST_TOOL_NAMES,
     PUBLIC_READ_ONLY_TOOL_NAMES,
     anonymous_tool_names,
@@ -27,12 +26,15 @@ class TestRoleHasWriteAccess:
     def test_non_write_roles_no_access(self):
         assert role_has_write_access(["readonly", "staff"]) is False
 
-    def test_admin_and_moderator_have_access(self):
-        assert role_has_write_access(["admin"]) is True
+    def test_content_staff_roles_have_access(self):
+        # v3: caseworker is the canonical content-staff key; contributor and
+        # moderator are accepted synonyms; admin is the superuser.
+        assert role_has_write_access(["caseworker"]) is True
+        # Matching is case-insensitive, so the Django group name also works.
+        assert role_has_write_access(["Caseworker"]) is True
+        assert role_has_write_access(["contributor"]) is True
         assert role_has_write_access(["moderator"]) is True
-
-    def test_default_caseworker_role_names(self):
-        assert CASEWORKER_ROLE_NAMES == {"contributor", "admin", "moderator"}
+        assert role_has_write_access(["admin"]) is True
 
     def test_mcp_write_roles_env_override(self, monkeypatch):
         monkeypatch.setenv("MCP_WRITE_ROLES", "review_assistant, Editor")
