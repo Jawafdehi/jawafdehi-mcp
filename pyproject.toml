@@ -1,11 +1,11 @@
 [project]
 name = "jawafdehi-mcp"
-version = "0.1.2"
+version = "0.1.3"
 requires-python = ">=3.12"
 
 [tool.poetry]
 name = "jawafdehi-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "MCP server for Jawafdehi corruption cases, NES entities and NGM judicial data"
 authors = ["Jawafdehi Inquiry <inquiry@jawafdehi.org>"]
 readme = "README.md"
