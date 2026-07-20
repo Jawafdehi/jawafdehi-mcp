@@ -10,7 +10,7 @@ import structlog
 from mcp.types import TextContent
 
 from .base import BaseTool
-from .ngm_proxy import execute_ngm_proxy_query, get_jawafdehi_api_config
+from .ngm_proxy import NGMProxyError, execute_ngm_proxy_query, get_jawafdehi_api_config
 
 logger = structlog.get_logger()
 
@@ -214,6 +214,25 @@ Court IDs (court_identifier):
                     text=json.dumps(response, ensure_ascii=False),
                 )
             ]
+        except NGMProxyError as e:
+            # A 4xx means the caller's SQL was rejected by the gated query plane
+            # (subquery/CTE/non-allowlisted table/bad column) — an expected input
+            # error, not a server fault, so log at warning: diagnosable in logs but
+            # below Sentry's ERROR capture threshold so it does not page. A 5xx (or
+            # a malformed 2xx) is a real upstream problem and stays at error.
+            log = logger.warning if 400 <= e.status_code < 500 else logger.error
+            log(
+                "ngm_query_failed",
+                error=str(e),
+                status_code=e.status_code,
+                category="proxy_api",
+            )
+            error_msg = str(e).replace('"', '\\"')
+            error_response = (
+                f'{{"success": false, "data": null, '
+                f'"error": "Proxy API error: {error_msg}", "query_time_ms": 0}}'
+            )
+            return [TextContent(type="text", text=error_response)]
         except RuntimeError as e:
             logger.error("ngm_query_failed", error=str(e), category="proxy_api")
             error_msg = str(e).replace('"', '\\"')

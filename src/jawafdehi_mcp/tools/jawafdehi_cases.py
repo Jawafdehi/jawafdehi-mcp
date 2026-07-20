@@ -221,7 +221,15 @@ class SearchJawafdehiCasesTool(BaseTool):
                     error_payload = _build_http_error_payload(
                         response, "Error accessing Jawafdehi search API."
                     )
-                    logger.error(
+                    # 401/403 is an expired/insufficient forwarded caller bearer —
+                    # expected auth churn, not a server fault — so log at warning
+                    # (below Sentry's ERROR threshold). 5xx and the rest stay error.
+                    log = (
+                        logger.warning
+                        if response.status_code in (401, 403)
+                        else logger.error
+                    )
+                    log(
                         "jawafdehi_search_http_error",
                         status_code=response.status_code,
                         details=error_payload.get("details"),
@@ -331,7 +339,15 @@ class GetJawafdehiCaseTool(BaseTool):
                         response,
                         f"Error accessing Jawafdehi case API ({lookup_label}).",
                     )
-                    logger.error(
+                    # 401/403 is an expired/insufficient forwarded caller bearer —
+                    # expected auth churn, not a server fault — so log at warning
+                    # (below Sentry's ERROR threshold). 5xx and the rest stay error.
+                    log = (
+                        logger.warning
+                        if response.status_code in (401, 403)
+                        else logger.error
+                    )
+                    log(
                         "jawafdehi_get_case_http_error",
                         lookup_label=lookup_label,
                         status_code=response.status_code,

@@ -43,6 +43,32 @@ def _sentry_processor(logger, method_name, event_dict):
     return event_dict
 
 
+# Benign SSE / streamable-http transport artifacts that surface out of the mcp
+# session manager's anyio TaskGroup (not our code): the client hanging up
+# mid-stream, and the cancel-scope teardown-ordering RuntimeError that anyio
+# raises when a streamed request is cancelled. These are unactionable noise, so we
+# drop them before they reach Sentry — matched on the exception type/message so a
+# genuinely different RuntimeError is still reported.
+_IGNORED_ERROR_SIGNATURES = (
+    "ClientDisconnect",
+    "Attempted to exit cancel scope in a different task",
+)
+
+
+def _drop_transport_noise(event, hint):
+    """Sentry ``before_send``: drop benign SSE-transport teardown artifacts."""
+    exc_info = hint.get("exc_info") if hint else None
+    if exc_info and exc_info[0] is not None:
+        text = f"{exc_info[0].__name__}: {exc_info[1]}"
+        if any(sig in text for sig in _IGNORED_ERROR_SIGNATURES):
+            return None
+    for value in (event.get("exception") or {}).get("values") or []:
+        signature = f"{value.get('type', '')}: {value.get('value', '')}"
+        if any(sig in signature for sig in _IGNORED_ERROR_SIGNATURES):
+            return None
+    return event
+
+
 def _init_sentry() -> None:
     # Opt-in error reporting: only initialize when a DSN is explicitly provided
     # (prod injects SENTRY_DSN via the jawafdehi-mcp-env secret). Local and
@@ -61,6 +87,7 @@ def _init_sentry() -> None:
             traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
             profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.1")),
             release=os.getenv("SENTRY_RELEASE", f"{SERVICE_NAME}@{_get_version()}"),
+            before_send=_drop_transport_noise,
         )
     except Exception:
         print("Failed to initialize Sentry SDK", file=sys.stderr)

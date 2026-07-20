@@ -18,6 +18,20 @@ from ..request_context import get_forwarded_headers
 logger = structlog.get_logger()
 
 
+class NGMProxyError(RuntimeError):
+    """A non-success response from the gated ``/api/query/`` plane.
+
+    Carries the upstream HTTP ``status_code`` so callers can tell a 4xx (the
+    caller's SQL was rejected by the allowlist — an expected input error) apart
+    from a 5xx (a real upstream fault) when deciding how loudly to log. Subclasses
+    ``RuntimeError`` so existing ``except RuntimeError`` handlers still catch it.
+    """
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def get_jawafdehi_api_config() -> tuple[str, str | None]:
     """Return validated Jawafdehi API base URL and optional token."""
     base_url = os.getenv("JAWAFDEHI_API_BASE_URL", "https://api.jawafdehi.org")
@@ -116,9 +130,10 @@ async def execute_ngm_proxy_query(
         # …) can't be normalized into columns/rows — surface it instead of
         # silently returning an empty successful result.
         if response.is_success:
-            raise RuntimeError(
+            raise NGMProxyError(
                 f"Non-JSON response from query endpoint "
-                f"({response.status_code}): {response.text}"
+                f"({response.status_code}): {response.text}",
+                response.status_code,
             )
         payload = {
             "detail": f"Non-JSON response from query endpoint ({response.status_code})",
@@ -126,9 +141,10 @@ async def execute_ngm_proxy_query(
         }
 
     if not response.is_success:
-        raise RuntimeError(
+        raise NGMProxyError(
             f"NGM query failed ({response.status_code}): "
-            f"{json.dumps(payload, ensure_ascii=False)}"
+            f"{json.dumps(payload, ensure_ascii=False)}",
+            response.status_code,
         )
 
     return {
