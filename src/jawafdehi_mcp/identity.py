@@ -40,12 +40,12 @@ PUBLIC_READ_ONLY_TOOL_NAMES: set[str] = {
     "convert_to_markdown",
 }
 
-# Anonymous tool set for the public internet door. Drops the two tools that
-# burn real resources for unauthenticated callers: convert_to_markdown (OCR /
-# LLM credits) and ngm_query_judicial (arbitrary SQL over the judicial lake).
+# Anonymous tool set for the public internet door. Drops convert_to_markdown,
+# which burns real resources (OCR / LLM credits) for unauthenticated callers.
+# ngm_query_judicial is intentionally exposed here: the judicial lake is public
+# court data and the SQL plane is already SELECT-gated.
 PUBLIC_HOST_TOOL_NAMES: set[str] = PUBLIC_READ_ONLY_TOOL_NAMES - {
     "convert_to_markdown",
-    "ngm_query_judicial",
 }
 
 
