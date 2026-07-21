@@ -92,13 +92,13 @@ class TestGetAllowedToolNames:
 
 
 class TestPublicHostToolSet:
-    def test_public_host_drops_ocr_and_sql(self):
+    def test_public_host_drops_ocr(self):
         assert "convert_to_markdown" not in PUBLIC_HOST_TOOL_NAMES
-        assert "ngm_query_judicial" not in PUBLIC_HOST_TOOL_NAMES
 
     def test_public_host_keeps_reads(self):
         assert "search_jawafdehi_cases" in PUBLIC_HOST_TOOL_NAMES
         assert "get_jawafdehi_case" in PUBLIC_HOST_TOOL_NAMES
+        assert "ngm_query_judicial" in PUBLIC_HOST_TOOL_NAMES
 
     def test_public_host_is_subset_of_read_only(self):
         assert PUBLIC_HOST_TOOL_NAMES < PUBLIC_READ_ONLY_TOOL_NAMES
@@ -121,10 +121,10 @@ class TestModeAwareGating:
         "create_jawafdehi_case",
     }
 
-    def test_anonymous_public_mode_excludes_ocr_sql(self):
+    def test_anonymous_public_mode_excludes_ocr_keeps_sql(self):
         result = get_allowed_tool_names(None, self.ALL_TOOLS, "public")
         assert "convert_to_markdown" not in result
-        assert "ngm_query_judicial" not in result
+        assert "ngm_query_judicial" in result
         assert "search_jawafdehi_cases" in result
 
     def test_anonymous_internal_mode_keeps_ocr_sql(self):
