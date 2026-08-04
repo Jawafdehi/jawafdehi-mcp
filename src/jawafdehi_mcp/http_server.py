@@ -121,6 +121,22 @@ class JawafdehiMCPServer:
         self.session_manager = StreamableHTTPSessionManager(
             app=mcp_app,
             json_response=True,
+            # stateless is REQUIRED for per-request auth to work, not just a
+            # scaling knob. In stateful mode the manager spawns the per-session
+            # ``run_server`` task once, when the session is created, and anyio
+            # copies the *creating* request's context into it. That task then
+            # dispatches every later tool call for the session, so tools see the
+            # ContextVars — including ``jawafdehi_bearer_token`` — captured at
+            # session creation, no matter what the current request carries. The
+            # bearer would then be frozen for the session's whole life and start
+            # 401ing upstream ("Token has expired.") once the original token
+            # aged out, while this middleware kept validating fresh ones per
+            # request and discarding them. Stateless mode starts the server task
+            # inside the request handler, so each tool call runs under its own
+            # request's context. Safe here because no tool needs cross-request
+            # session state (no sampling/progress/subscriptions) and responses
+            # are plain JSON; it also removes the single-replica constraint.
+            stateless=True,
         )
 
     async def __call__(self, scope, receive, send):
