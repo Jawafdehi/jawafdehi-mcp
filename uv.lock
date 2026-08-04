@@ -797,7 +797,7 @@ wheels = [
 
 [[package]]
 name = "jawafdehi-mcp"
-version = "0.1.2"
+version = "0.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "google-cloud-logging" },

@@ -6,6 +6,7 @@ protected-resource-metadata endpoints.
 """
 
 import json
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -20,7 +21,12 @@ from jawafdehi_mcp.http_server import (
 )
 from jawafdehi_mcp.identity import current_request_mode, current_user_identity
 from jawafdehi_mcp.oidc import OIDCError
-from jawafdehi_mcp.request_context import current_transport, jawafdehi_bearer_token
+from jawafdehi_mcp.request_context import (
+    current_transport,
+    get_forwarded_headers,
+    jawafdehi_bearer_token,
+)
+from jawafdehi_mcp.tools import ngm_judicial
 
 
 def _make_scope(headers=None, path="/"):
@@ -310,3 +316,101 @@ class TestModeDoors:
         await mcp_server._handle_http(scope, _dummy_receive, _SendRecorder())
         assert captured["identity"] == identity
         assert captured["mode"] == "internal"
+
+
+@asynccontextmanager
+async def _running(server):
+    """Drive the ASGI lifespan so the session manager's task group is live."""
+
+    async def _startup():
+        return {"type": "lifespan.startup"}
+
+    async def _shutdown():
+        return {"type": "lifespan.shutdown"}
+
+    await server._handle_lifespan({"type": "lifespan"}, _startup, _SendRecorder())
+    try:
+        yield server
+    finally:
+        await server._handle_lifespan({"type": "lifespan"}, _shutdown, _SendRecorder())
+
+
+async def _call_tool(server, bearer, name="ngm_query_judicial", arguments=None):
+    """POST a real tools/call through the middleware AND the session manager."""
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments or {}},
+        }
+    ).encode()
+    scope = _make_scope(
+        [
+            (b"authorization", f"Bearer {bearer}".encode()),
+            (b"x-mcp-mode", b"internal"),
+            (b"content-type", b"application/json"),
+            (b"accept", b"application/json"),
+        ]
+    )
+    delivered = False
+
+    async def _receive():
+        nonlocal delivered
+        if not delivered:
+            delivered = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    send = _SendRecorder()
+    await server._handle_http(scope, _receive, send)
+    return send
+
+
+class TestForwardedBearerFreshness:
+    """The bearer a tool forwards upstream must be the CURRENT request's.
+
+    These go through the real StreamableHTTPSessionManager on purpose. The
+    TestMiddleware cases above stub out ``handle_request``, so they only prove
+    the ContextVar is right *in the request task* — tools run in a task the
+    manager spawns, which is where the bearer used to go stale.
+    """
+
+    pytestmark = pytest.mark.asyncio(loop_scope="function")
+
+    async def test_tool_forwards_each_request_own_bearer(self, monkeypatch):
+        async def _resolve(token):
+            return {"sub": "u1", "email": "a@x.org", "roles": ["admin"]}
+
+        monkeypatch.setattr(http_server, "resolve_bearer_identity", _resolve)
+
+        forwarded: list[str | None] = []
+
+        async def _fake_execute(client, base_url, token, query, timeout=15):
+            # Recorded from inside the tool, i.e. the task the manager dispatches in.
+            forwarded.append(get_forwarded_headers().get("Authorization"))
+            return {
+                "success": True,
+                "data": {"columns": [], "rows": [], "row_count": 0},
+                "query_time_ms": 1,
+            }
+
+        monkeypatch.setattr(ngm_judicial, "execute_ngm_proxy_query", _fake_execute)
+
+        args = {"query": "SELECT identifier FROM courts LIMIT 1"}
+        async with _running(JawafdehiMCPServer()) as server:
+            first = await _call_tool(server, "token-A", arguments=args)
+            # A later request carrying a refreshed token, as happens when the
+            # client rotates its access token mid-conversation.
+            second = await _call_tool(server, "token-B", arguments=args)
+
+        assert first.status == 200, first.body
+        assert second.status == 200, second.body
+        # Frozen-context regression: the second call must NOT forward token-A.
+        assert forwarded == ["Bearer token-A", "Bearer token-B"]
+
+    async def test_manager_is_stateless(self):
+        # Guards the reason for stateless=True: stateful mode spawns the
+        # per-session task once and freezes that request's ContextVars into
+        # every later tool call on the session.
+        assert JawafdehiMCPServer().session_manager.stateless is True
