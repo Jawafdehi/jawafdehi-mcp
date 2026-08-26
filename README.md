@@ -1,5 +1,39 @@
 # Jawafdehi MCP Server
 
+> [!WARNING]
+> **This repository is deprecated and no longer maintained.**
+>
+> The Jawafdehi MCP server is now hosted at **`https://api.jawafdehi.org/mcp`**. You no longer need to install, host, or configure anything — point your MCP client at that URL and sign in with your own Jawafdehi account. See [Migrating to the hosted endpoint](#migrating-to-the-hosted-endpoint) below.
+
+## Migrating to the hosted endpoint
+
+### Claude Code
+
+```bash
+claude mcp add --transport http jawafdehi https://api.jawafdehi.org/mcp \
+  --client-id 380811001584419184 -s user
+```
+
+Then start Claude Code, run `/mcp`, select **jawafdehi**, and choose **Authenticate**.
+
+Confirm it worked by running the `get_current_user` tool — you want `"authenticated": true` with your name and roles. If it reports `false` you are on the anonymous read-only catalog, and the write tools (creating and patching cases, uploading materials) will silently be unavailable.
+
+On a machine with no browser, use `claude mcp login jawafdehi --no-browser` instead. It prints a URL to open elsewhere; the callback to `localhost` will fail, which is expected — paste that failed URL back into the terminal.
+
+### Other MCP clients
+
+Use the streamable-HTTP transport against `https://api.jawafdehi.org/mcp`. OAuth discovery is at `/.well-known/oauth-protected-resource/mcp` and the authorization server is `https://auth.jawafdehi.org`.
+
+### Why this changed
+
+The standalone server was folded into the platform on 2026-08-05, and `https://api.jawafdehi.org/mcp` became the canonical address on 2026-08-11. The hosted endpoint authenticates every caller individually, so the tools you get follow your own Jawafdehi roles rather than a shared token.
+
+The static `JAWAFDEHI_API_TOKEN` flow documented below **no longer works**: static API tokens have been retired platform-wide in favour of per-person OIDC login.
+
+Everything below this point is retained for historical reference.
+
+---
+
 Model Context Protocol (MCP) server providing tools for integrating LLM workflows with Jawafdehi products, including Jawafdehi.org, Nepal Entity Service (NES), Nepal Government Modernization (NGM), and MarkItDown-based document conversion with the `likhit` plugin.
 
 ## Available MCP Tools
@@ -82,7 +116,9 @@ brew install antiword
 
 Without a system `antiword` binary, the bundled binary inside `pyantiword` (MarkItDown's `.doc` converter) may fail with an `Exec format error` if it was compiled for a different CPU architecture. `.docx`, `.pdf`, and all other formats are unaffected.
 
-## Installation
+## Installation (legacy self-hosting — see the deprecation notice above)
+
+> These instructions describe running your own copy of the standalone server. They are kept for reference; new users should use `https://api.jawafdehi.org/mcp` instead.
 
 Install via PyPI (recommended):
 
@@ -97,7 +133,9 @@ If you want the latest unreleased changes, install from GitHub instead:
 uv tool install git+https://github.com/Jawafdehi/jawafdehi-mcp.git
 ```
 
-## Configuration
+## Configuration (legacy)
+
+> **Static API tokens no longer work.** `JAWAFDEHI_API_TOKEN` must be an OIDC JWT; the old static DRF tokens are rejected platform-wide. Use the hosted endpoint at `https://api.jawafdehi.org/mcp`, which handles login for you.
 
 Set the required environment variables:
 
@@ -106,7 +144,7 @@ export JAWAFDEHI_API_BASE_URL="https://api.jawafdehi.org"
 export JAWAFDEHI_API_TOKEN="your-jawafdehi-api-token"
 ```
 
-To request a Jawafdehi API token, contact `inquiry@jawafdehi.org` or WhatsApp: `+1 206-530-9098`.
+For access questions, contact `inquiry@jawafdehi.org` or WhatsApp: `+1 206-530-9098`.
 
 ## Usage
 

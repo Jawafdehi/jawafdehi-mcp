@@ -1,5 +1,8 @@
 # Jawafdehi MCP Server - Usage Guide
 
+> [!WARNING]
+> **Deprecated.** This guide covers self-hosting the standalone server, which is no longer maintained. The MCP server is now hosted at **`https://api.jawafdehi.org/mcp`** — point your client there and sign in with your own Jawafdehi account. See the [README](README.md) for the migration steps.
+
 ## Quick Start
 
 ### 1. Install Dependencies
